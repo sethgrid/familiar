@@ -155,9 +155,6 @@ func playAnimation(anim pet.AnimationConfig) {
 
 	// Hide cursor
 	fmt.Fprint(os.Stdout, "\033[?25l")
-	
-	// Save cursor position at the start - this is our anchor point
-	fmt.Fprint(os.Stdout, "\033[s")
 
 	for i := 0; i < totalFrames; i++ {
 		frameIdx := i % len(anim.Frames)
@@ -170,24 +167,42 @@ func playAnimation(anim pet.AnimationConfig) {
 			duration = time.Duration(frame.MS) * time.Millisecond
 		}
 
-		// Always restore to the saved position (our anchor point)
-		fmt.Fprint(os.Stdout, "\033[u")
-		
-		// Clear maxLines worth of space from the anchor position
+		// For frames after the first, move back to start
+		// After printing a trimmed frame (no trailing newline), cursor is at the END of the last line
+		// To get back to the start of the first line:
+		// 1. Move to start of current line (\r) - now at start of last line
+		// 2. Move up by (frameHeight - 1) to get to start of first line
+		if i > 0 {
+			prevFrameIdx := (i - 1) % len(anim.Frames)
+			prevFrameHeight := frameHeights[prevFrameIdx]
+			// Move to start of current line (we're at end of last line of previous frame)
+			fmt.Fprint(os.Stdout, "\r")
+			// Move up by (frameHeight - 1) to get to start of first line
+			// If frame is 3 lines, we're at start of line 3, move up 2 to get to line 1
+			if prevFrameHeight > 1 {
+				fmt.Fprintf(os.Stdout, "\033[%dA", prevFrameHeight-1)
+			}
+		}
+
+		// Clear exactly maxLines worth of space from current position
+		// We're at the start position (line 1), so clear downward
 		for j := 0; j < maxLines; j++ {
-			fmt.Fprint(os.Stdout, "\033[K") // Clear from cursor to end of line
+			fmt.Fprint(os.Stdout, "\033[2K") // Clear entire line
 			if j < maxLines-1 {
-				fmt.Fprint(os.Stdout, "\033[B") // Move down one line
+				fmt.Fprint(os.Stdout, "\033[1B") // Move down exactly 1 line
 			}
 		}
 		
-		// Restore to anchor position again to draw
-		fmt.Fprint(os.Stdout, "\033[u")
+		// Move back up to start - we moved down (maxLines-1) times, so move back up that much
+		// After this, we're back at the start position (line 1)
+		if maxLines > 1 {
+			fmt.Fprintf(os.Stdout, "\033[%dA", maxLines-1)
+		}
 
-		// Print trimmed frame (no trailing newline)
-		// After this, cursor will be at the end of the last line of the frame
+		// Print the frame
+		// After printing (no trailing newline), cursor will be at the END of the last line
 		fmt.Fprint(os.Stdout, trimmedArt)
-		os.Stdout.Sync() // Flush output
+		os.Stdout.Sync()
 		
 		// Add delay between frames (except for last frame)
 		if i < totalFrames-1 {
@@ -196,8 +211,9 @@ func playAnimation(anim pet.AnimationConfig) {
 	}
 	
 	// After animation, move cursor to below the art
-	// We're currently at the end of the last line of the last frame
-	// Just move to the next line
+	// We're currently at the start of the line AFTER the last frame
+	// The last frame was maxLines tall, so we're already positioned correctly
+	// Just ensure cursor is visible and add a newline for spacing
 	fmt.Fprint(os.Stdout, "\n")
 	
 	// Show cursor
