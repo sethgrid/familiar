@@ -2,11 +2,19 @@ package art
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/sethgrid/familiar/internal/conditions"
 	"github.com/sethgrid/familiar/internal/pet"
 )
+
+// isTerminal checks if stdout is a terminal
+func isTerminal() bool {
+	fileInfo, _ := os.Stdout.Stat()
+	return (fileInfo.Mode() & os.ModeCharDevice) != 0
+}
 
 func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, animations map[string]pet.AnimationConfig) string {
 	// If evolution is 0 and no special conditions, return "egg"
@@ -81,6 +89,13 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 	
 	// Try to get animation from config
 	if anim, exists := p.Config.Animations[key]; exists && len(anim.Frames) > 0 {
+		// If animation has multiple frames and animations are enabled, play animation
+		if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
+			playAnimation(anim)
+			// Return empty string - animation already displayed the final frame
+			return ""
+		}
+		// Otherwise return first frame
 		return anim.Frames[0].Art
 	}
 	
@@ -98,6 +113,96 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 		return getEggCat()
 	}
 	return getDefaultCat()
+}
+
+// playAnimation plays an animation by cycling through frames directly to stdout
+func playAnimation(anim pet.AnimationConfig) {
+	if len(anim.Frames) == 0 || len(anim.Frames) == 1 {
+		return
+	}
+
+	// Calculate frame duration
+	fps := anim.FPS
+	if fps <= 0 {
+		fps = 1
+	}
+	frameDuration := time.Second / time.Duration(fps)
+
+	// Determine number of loops (limit to reasonable number)
+	loops := anim.Loops
+	if loops <= 0 {
+		loops = 3 // Default to 3 loops for demo
+	}
+	if loops > 10 {
+		loops = 10 // Cap at 10 loops max
+	}
+
+	totalFrames := len(anim.Frames) * loops
+
+	// Trim trailing newlines from frames and calculate their heights
+	trimmedFrames := make([]string, len(anim.Frames))
+	frameHeights := make([]int, len(anim.Frames))
+	maxLines := 0
+	for i, frame := range anim.Frames {
+		trimmed := strings.TrimRight(frame.Art, "\n\r")
+		trimmedFrames[i] = trimmed
+		lines := strings.Count(trimmed, "\n") + 1
+		frameHeights[i] = lines
+		if lines > maxLines {
+			maxLines = lines
+		}
+	}
+
+	// Hide cursor
+	fmt.Fprint(os.Stdout, "\033[?25l")
+	
+	// Save cursor position at the start - this is our anchor point
+	fmt.Fprint(os.Stdout, "\033[s")
+
+	for i := 0; i < totalFrames; i++ {
+		frameIdx := i % len(anim.Frames)
+		trimmedArt := trimmedFrames[frameIdx]
+		frame := anim.Frames[frameIdx]
+		
+		// Use frame-specific duration if available, otherwise use calculated duration
+		duration := frameDuration
+		if frame.MS > 0 {
+			duration = time.Duration(frame.MS) * time.Millisecond
+		}
+
+		// Always restore to the saved position (our anchor point)
+		fmt.Fprint(os.Stdout, "\033[u")
+		
+		// Clear maxLines worth of space from the anchor position
+		for j := 0; j < maxLines; j++ {
+			fmt.Fprint(os.Stdout, "\033[K") // Clear from cursor to end of line
+			if j < maxLines-1 {
+				fmt.Fprint(os.Stdout, "\033[B") // Move down one line
+			}
+		}
+		
+		// Restore to anchor position again to draw
+		fmt.Fprint(os.Stdout, "\033[u")
+
+		// Print trimmed frame (no trailing newline)
+		// After this, cursor will be at the end of the last line of the frame
+		fmt.Fprint(os.Stdout, trimmedArt)
+		os.Stdout.Sync() // Flush output
+		
+		// Add delay between frames (except for last frame)
+		if i < totalFrames-1 {
+			time.Sleep(duration)
+		}
+	}
+	
+	// After animation, move cursor to below the art
+	// We're currently at the end of the last line of the last frame
+	// Just move to the next line
+	fmt.Fprint(os.Stdout, "\n")
+	
+	// Show cursor
+	fmt.Fprint(os.Stdout, "\033[?25h")
+	os.Stdout.Sync()
 }
 
 func getDefaultCat() string {
