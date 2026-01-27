@@ -1,0 +1,53 @@
+version = '1.0'
+name = 'TestCat'
+evolutionMode = 'by-age'
+evolution = 0
+maxEvolution = 5
+createdAt = 2026-01-27T05:53:14.888426754-05:00
+decayEnabled = true
+decayRate = 1.0
+hungerDecayPerHour = 2.0
+happinessDecayPerHour = 1.5
+energyDecayPerHour = 1.0
+stoneThreshold = 10
+infirmEnabled = true
+infirmDecayMultiplier = 1.5
+stoneDecayMultiplier = 0.1
+eventChance = 0.01
+healthComputation = 'average'
+interactionThreshold = 3
+cacheTTL = 86400000000000
+allowAnsiAnimations = false
+
+[animations]
+[animations.default]
+source = 'inline'
+fps = 1
+loops = 1
+
+[[animations.default.frames]]
+art = " /\\_/\\ \n( o.o )\n > ^ <"
+
+[animations.egg]
+source = 'inline'
+fps = 1
+loops = 1
+
+[[animations.egg.frames]]
+art = "  ___  \n /  . . \\ \n \\___/"
+
+[animations.infirm]
+source = 'inline'
+fps = 1
+loops = 1
+
+[[animations.infirm.frames]]
+art = " /\\_/\\ \n( x.x )\n > ^ <"
+
+[animations.stone]
+source = 'inline'
+fps = 1
+loops = 1
+
+[[animations.stone.frames]]
+art = " /\\_/\\ \n( +.+ )\n > ^ <"

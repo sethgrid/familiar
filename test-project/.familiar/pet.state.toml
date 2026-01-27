@@ -1,0 +1,19 @@
+configRef = '/home/qwert/code/terminalbuddy/test-project/.familiar/pet.toml'
+nameOverride = 'TestCat'
+hunger = 89
+happiness = 84
+energy = 54
+evolution = 0
+isInfirm = false
+isStone = false
+message = 'ship is red'
+lastFed = 2026-01-27T05:53:40.588324203-05:00
+lastPlayed = 2026-01-27T05:53:14.888426754-05:00
+lastVisited = 2026-01-27T05:53:14.888426754-05:00
+lastChecked = 2026-01-27T05:53:50.443741142-05:00
+lastVisits = []
+lastPlays = []
+
+[[lastFeeds]]
+time = 2026-01-27T05:53:40.588324203-05:00
+action = 'feed'
