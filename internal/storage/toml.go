@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
@@ -72,7 +75,50 @@ func SavePetState(p *pet.Pet, statePath string) error {
 	return nil
 }
 
-func InitPet(global bool, name string, baseDir string) error {
+// findLibDir attempts to find the lib directory relative to the executable or source
+func findLibDir() (string, error) {
+	// Try to find lib relative to executable
+	execPath, err := os.Executable()
+	if err == nil {
+		execDir := filepath.Dir(execPath)
+		// Check if lib exists relative to executable
+		libPath := filepath.Join(execDir, "lib", "v1")
+		if _, err := os.Stat(libPath); err == nil {
+			return libPath, nil
+		}
+		// Try going up one level (if executable is in bin/)
+		parentLibPath := filepath.Join(filepath.Dir(execDir), "lib", "v1")
+		if _, err := os.Stat(parentLibPath); err == nil {
+			return parentLibPath, nil
+		}
+	}
+
+	// Try relative to current working directory
+	cwd, err := os.Getwd()
+	if err == nil {
+		libPath := filepath.Join(cwd, "lib", "v1")
+		if _, err := os.Stat(libPath); err == nil {
+			return libPath, nil
+		}
+		// Try going up directories to find lib
+		dir := cwd
+		for i := 0; i < 10; i++ {
+			libPath := filepath.Join(dir, "lib", "v1")
+			if _, err := os.Stat(libPath); err == nil {
+				return libPath, nil
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+
+	return "", fmt.Errorf("could not find lib/v1 directory")
+}
+
+func InitPet(global bool, petType string, name string, baseDir string) error {
 	petDir := filepath.Join(baseDir, ".familiar")
 	if err := os.MkdirAll(petDir, 0755); err != nil {
 		return fmt.Errorf("failed to create pet directory: %w", err)
@@ -81,123 +127,232 @@ func InitPet(global bool, name string, baseDir string) error {
 	configPath := filepath.Join(petDir, "pet.toml")
 	statePath := filepath.Join(petDir, "pet.state.toml")
 
+	// Find lib directory
+	libDir, err := findLibDir()
+	if err != nil {
+		return fmt.Errorf("failed to find lib directory: %w", err)
+	}
+
+	// Read template files
+	templateConfigPath := filepath.Join(libDir, petType+".toml")
+	templateStatePath := filepath.Join(libDir, petType+".state.toml")
+
+	configTemplate, err := os.ReadFile(templateConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read template config file %s: %w", templateConfigPath, err)
+	}
+
+	stateTemplate, err := os.ReadFile(templateStatePath)
+	if err != nil {
+		return fmt.Errorf("failed to read template state file %s: %w", templateStatePath, err)
+	}
+
 	now := time.Now()
-	config := pet.PetConfig{
-		Version:                 "1.0",
-		Name:                    name,
-		EvolutionMode:           pet.EvolutionModeByAge,
-		Evolution:               0,
-		MaxEvolution:            DefaultMaxEvolution,
-		CreatedAt:               now,
-		DecayEnabled:            true,
-		DecayRate:               DefaultDecayRate,
-		HungerDecayPerHour:      DefaultHungerDecayPerHour,
-		HappinessDecayPerHour:   DefaultHappinessDecayPerHour,
-		EnergyDecayPerHour:      DefaultEnergyDecayPerHour,
-		StoneThreshold:          DefaultStoneThreshold,
-		InfirmEnabled:           true,
-		InfirmDecayMultiplier:   DefaultInfirmDecayMultiplier,
-		StoneDecayMultiplier:    DefaultStoneDecayMultiplier,
-		EventChance:             DefaultEventChance,
-		HealthComputation:       pet.HealthComputationAverage,
-		InteractionThreshold:   DefaultInteractionThreshold,
-		CacheTTL:                DefaultCacheTTL,
-		AllowAnsiAnimations:     false,
-		Animations:              make(map[string]pet.AnimationConfig),
-	}
+	createdAtStr := now.Format(time.RFC3339Nano)
 
-	// Add default ASCII cat animations
-	config.Animations["default"] = pet.AnimationConfig{
-		Source: "inline",
-		FPS:    1,
-		Loops:  1,
-		Frames: []pet.Frame{
-			{Art: ` /\_/\ 
-( o.o )
- > ^ <`},
-		},
-	}
+	// Replace placeholders in config template
+	configContent := string(configTemplate)
+	configContent = strings.ReplaceAll(configContent, "{{NAME}}", name)
+	configContent = strings.ReplaceAll(configContent, "{{CREATED_AT}}", createdAtStr)
 
-	config.Animations["infirm"] = pet.AnimationConfig{
-		Source: "inline",
-		FPS:    1,
-		Loops:  1,
-		Frames: []pet.Frame{
-			{Art: ` /\_/\ 
-( x.x )
- > ^ <`},
-		},
-	}
-
-	config.Animations["stone"] = pet.AnimationConfig{
-		Source: "inline",
-		FPS:    1,
-		Loops:  1,
-		Frames: []pet.Frame{
-			{Art: ` /\_/\ 
-( +.+ )
- > ^ <`},
-		},
-	}
-
-	config.Animations["egg"] = pet.AnimationConfig{
-		Source: "inline",
-		FPS:    1,
-		Loops:  1,
-		Frames: []pet.Frame{
-			{Art: `  ___  
- /  . . \ 
- \___/`},
-		},
-	}
-
-	config.Animations["has-message"] = pet.AnimationConfig{
-		Source: "inline",
-		FPS:    1,
-		Loops:  1,
-		Frames: []pet.Frame{
-			{Art: ` /\_/\ 
-( o.o )
- > ^ <*`},
-		},
-	}
-
-	state := pet.PetState{
-		ConfigRef:    configPath,
-		NameOverride: name,
-		Hunger:       75,
-		Happiness:    80,
-		Energy:       60,
-		Evolution:    0,
-		IsInfirm:     false,
-		IsStone:      false,
-		Message:      "",
-		LastFed:      now,
-		LastPlayed:   now,
-		LastVisited:  now,
-		LastChecked:  now,
-		LastVisits:   []pet.Interaction{},
-		LastFeeds:    []pet.Interaction{},
-		LastPlays:    []pet.Interaction{},
-	}
+	// Replace placeholders in state template
+	stateContent := string(stateTemplate)
+	stateContent = strings.ReplaceAll(stateContent, "{{NAME}}", name)
+	stateContent = strings.ReplaceAll(stateContent, "{{CONFIG_REF}}", configPath)
+	stateContent = strings.ReplaceAll(stateContent, "{{CREATED_AT}}", createdAtStr)
 
 	// Write config
-	configData, err := toml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-	if err := os.WriteFile(configPath, configData, 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	// Write state
-	stateData, err := toml.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
-	}
-	if err := os.WriteFile(statePath, stateData, 0644); err != nil {
+	if err := os.WriteFile(statePath, []byte(stateContent), 0644); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
+	return nil
+}
+
+// ReleasePet soft-deletes a pet by renaming files with .released.{timestamp}
+func ReleasePet(petDir, configPath, statePath, petName string) error {
+	now := time.Now()
+	timestamp := strconv.FormatInt(now.Unix(), 10)
+
+	// Sanitize pet name for filename (remove special chars)
+	safeName := strings.ReplaceAll(petName, " ", "_")
+	safeName = strings.ReplaceAll(safeName, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
+
+	// Rename config file
+	newConfigPath := filepath.Join(petDir, fmt.Sprintf("pet.%s.released.%s.toml", safeName, timestamp))
+	if err := os.Rename(configPath, newConfigPath); err != nil {
+		return fmt.Errorf("failed to rename config file: %w", err)
+	}
+
+	// Rename state file
+	newStatePath := filepath.Join(petDir, fmt.Sprintf("pet.state.%s.released.%s.toml", safeName, timestamp))
+	if err := os.Rename(statePath, newStatePath); err != nil {
+		// Try to restore config if state rename fails
+		os.Rename(newConfigPath, configPath)
+		return fmt.Errorf("failed to rename state file: %w", err)
+	}
+
+	return nil
+}
+
+// BanishPet permanently deletes a pet
+func BanishPet(petDir, configPath, statePath string) error {
+	if err := os.Remove(configPath); err != nil {
+		return fmt.Errorf("failed to delete config file: %w", err)
+	}
+	if err := os.Remove(statePath); err != nil {
+		return fmt.Errorf("failed to delete state file: %w", err)
+	}
+	return nil
+}
+
+// ReleasedPetInfo holds information about a released pet
+type ReleasedPetInfo struct {
+	Name      string
+	Timestamp int64
+	ConfigPath string
+	StatePath  string
+}
+
+// FindMostRecentReleased finds the most recently released pet
+func FindMostRecentReleased(petDir string) (string, error) {
+	released, err := findAllReleased(petDir)
+	if err != nil {
+		return "", err
+	}
+	if len(released) == 0 {
+		return "", fmt.Errorf("no released pets found")
+	}
+	// Return the path to the most recent one (they're sorted by timestamp desc)
+	return released[0].StatePath, nil
+}
+
+// FindReleasedByName finds a released pet by name
+func FindReleasedByName(petDir, name string) (string, error) {
+	released, err := findAllReleased(petDir)
+	if err != nil {
+		return "", err
+	}
+	
+	// Try exact match first
+	for _, r := range released {
+		if r.Name == name {
+			return r.StatePath, nil
+		}
+	}
+	
+	// Try case-insensitive match
+	lowerName := strings.ToLower(name)
+	for _, r := range released {
+		if strings.ToLower(r.Name) == lowerName {
+			return r.StatePath, nil
+		}
+	}
+	
+	return "", fmt.Errorf("no released pet found with name '%s'", name)
+}
+
+// findAllReleased finds all released pets
+func findAllReleased(petDir string) ([]ReleasedPetInfo, error) {
+	entries, err := os.ReadDir(petDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pet directory: %w", err)
+	}
+
+	var released []ReleasedPetInfo
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		
+		name := entry.Name()
+		// Look for pattern: pet.state.{name}.released.{timestamp}.toml
+		if strings.HasPrefix(name, "pet.state.") && strings.Contains(name, ".released.") && strings.HasSuffix(name, ".toml") {
+			// Extract name and timestamp
+			// pet.state.{name}.released.{timestamp}.toml
+			parts := strings.Split(name, ".")
+			if len(parts) >= 5 {
+				// parts: ["pet", "state", "{name}", "released", "{timestamp}", "toml"]
+				// Find where "released" is
+				releasedIdx := -1
+				for i, part := range parts {
+					if part == "released" {
+						releasedIdx = i
+						break
+					}
+				}
+				if releasedIdx > 2 && releasedIdx < len(parts)-2 {
+					// Name is everything between "state" and "released"
+					petName := strings.Join(parts[2:releasedIdx], ".")
+					timestampStr := parts[releasedIdx+1]
+					timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+					if err == nil {
+						statePath := filepath.Join(petDir, name)
+						
+						// Find corresponding config file
+						configName := strings.Replace(name, "pet.state.", "pet.", 1)
+						configPath := filepath.Join(petDir, configName)
+						
+						released = append(released, ReleasedPetInfo{
+							Name:       petName,
+							Timestamp:  timestamp,
+							ConfigPath: configPath,
+							StatePath:  statePath,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Sort by timestamp descending (most recent first)
+	sort.Slice(released, func(i, j int) bool {
+		return released[i].Timestamp > released[j].Timestamp
+	})
+
+	return released, nil
+}
+
+// RestoreReleased restores a released pet by renaming files back
+func RestoreReleased(petDir, releasedStatePath string) error {
+	// Extract the released filename
+	releasedStateFile := filepath.Base(releasedStatePath)
+	
+	// Find the corresponding config file
+	// pet.state.{name}.released.{timestamp}.toml -> pet.{name}.released.{timestamp}.toml
+	releasedConfigFile := strings.Replace(releasedStateFile, "pet.state.", "pet.", 1)
+	releasedConfigPath := filepath.Join(petDir, releasedConfigFile)
+	
+	// Check if config file exists
+	if _, err := os.Stat(releasedConfigPath); err != nil {
+		return fmt.Errorf("released config file not found: %s", releasedConfigPath)
+	}
+	
+	// Restore to pet.toml and pet.state.toml
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	
+	// Check if pet already exists
+	if _, err := os.Stat(statePath); err == nil {
+		return fmt.Errorf("a familiar already exists. Use 'release' first")
+	}
+	
+	// Rename files back
+	if err := os.Rename(releasedConfigPath, configPath); err != nil {
+		return fmt.Errorf("failed to restore config file: %w", err)
+	}
+	if err := os.Rename(releasedStatePath, statePath); err != nil {
+		// Try to restore config if state restore fails
+		os.Rename(configPath, releasedConfigPath)
+		return fmt.Errorf("failed to restore state file: %w", err)
+	}
+	
 	return nil
 }

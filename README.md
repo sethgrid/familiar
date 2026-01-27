@@ -5,10 +5,29 @@ A terminal-based pet system - a familiar that lives in your terminal that enjoys
 
 ### Example: Project Familiar + Prompt + Messages
 
-Add a tiny familiar to your prompt:
+Add a tiny familiar to your prompt (after `go install ./cmd/familiar`):
 
 ```bash
 export PS1='$(familiar health) \w$ '
+```
+
+If you're like me and using p10k theme for zsh:
+
+```bash
+# ~/.p10k.zsh (or ~/.config/p10k/.p10k.zsh depending on your setup)
+
+function prompt_familiar_health() {
+  local val
+  val=$(familiar health 2>/dev/null)
+  [[ -n $val ]] && p10k segment -f yellow -t "$val"
+}
+
+# elsewhere in the file:
+typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
+  #...
+  familiar_health
+  #...
+)
 ```
 
 You're working in a shared repo:

@@ -9,6 +9,19 @@ import (
 )
 
 func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, animations map[string]pet.AnimationConfig) string {
+	// If evolution is 0 and no special conditions, return "egg"
+	if evolution == 0 {
+		hasSpecialCondition := conds[conditions.CondHasMessage] || 
+			conds[conditions.CondStone] || 
+			conds[conditions.CondInfirm]
+		if !hasSpecialCondition {
+			// Check if egg animation exists
+			if _, exists := animations["egg"]; exists {
+				return "egg"
+			}
+		}
+	}
+
 	// Build key from conditions
 	var parts []string
 	
