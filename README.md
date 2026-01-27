@@ -97,7 +97,7 @@ The default familiar is an ASCII cat with different states:
 ## Project Structure
 
 ```
-terminalbuddy/
+familiar/
 ├── cmd/familiar/          # CLI entry point
 ├── internal/
 │   ├── pet/              # Pet models (config, state, decay)

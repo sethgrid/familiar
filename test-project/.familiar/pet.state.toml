@@ -1,4 +1,4 @@
-configRef = '/home/qwert/code/terminalbuddy/test-project/.familiar/pet.toml'
+configRef = '~/code/test-project/.familiar/pet.toml'
 nameOverride = 'TestCat'
 hunger = 89
 happiness = 84
