@@ -1,0 +1,81 @@
+version = "1.0"
+name = "{{NAME}}"
+evolutionMode = "by-age"
+evolution = 0
+maxEvolution = 5
+createdAt = {{CREATED_AT}}
+decayEnabled = true
+decayRate = 1.0
+hungerDecayPerHour = 2.0
+happinessDecayPerHour = 1.5
+energyDecayPerHour = 1.0
+stoneThreshold = 10
+infirmEnabled = true
+infirmDecayMultiplier = 1.5
+stoneDecayMultiplier = 0.1
+eventChance = 0.01
+healthComputation = "average"
+interactionThreshold = 3
+cacheTTL = 86400000000000
+allowAnsiAnimations = false
+
+[animations]
+[animations.default]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.default.frames]]
+art = '''
+ /\_/\ 
+( o.o )
+ > ^ <
+'''
+
+[animations.egg]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.egg.frames]]
+art = '''
+  ______
+ /  . . \ 
+ \______/
+'''
+
+[animations.has-message]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.has-message.frames]]
+art = '''
+ /\_/\ 
+( o.o )
+ > ^ <*
+'''
+
+[animations.infirm]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.infirm.frames]]
+art = '''
+ /\_/\ 
+( x.x )
+ > ^ <
+'''
+
+[animations.stone]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.stone.frames]]
+art = '''
+ /\_/\ 
+( +.+ )
+ > ^ <
+'''

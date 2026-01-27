@@ -1,0 +1,16 @@
+configRef = "{{CONFIG_REF}}"
+nameOverride = "{{NAME}}"
+hunger = 75
+happiness = 80
+energy = 60
+evolution = 0
+isInfirm = false
+isStone = false
+message = ""
+lastFed = {{CREATED_AT}}
+lastPlayed = {{CREATED_AT}}
+lastVisited = {{CREATED_AT}}
+lastChecked = {{CREATED_AT}}
+lastVisits = []
+lastFeeds = []
+lastPlays = []

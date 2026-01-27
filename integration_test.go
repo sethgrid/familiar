@@ -20,7 +20,7 @@ func TestNonAnimatedFamiliar(t *testing.T) {
 	petDir := filepath.Join(tmpDir, ".familiar")
 
 	// Initialize pet
-	err := storage.InitPet(false, "TestCat", tmpDir)
+	err := storage.InitPet(false, "cat", "TestCat", tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize pet: %v", err)
 	}
@@ -68,9 +68,7 @@ func TestNonAnimatedFamiliar(t *testing.T) {
  /  . . \ 
  \___/`
 	if artStr != expectedEgg {
-		t.Logf("Art output:\n%s", artStr)
-		t.Logf("Expected:\n%s", expectedEgg)
-		// This is okay for now, just log it
+		t.Errorf("Expected egg art for evolution 0, got:\n%s\nExpected:\n%s", artStr, expectedEgg)
 	}
 
 	// Test decay application
@@ -108,7 +106,7 @@ func TestAnimatedFamiliar(t *testing.T) {
 	petDir := filepath.Join(tmpDir, ".familiar")
 
 	// Initialize pet
-	err := storage.InitPet(false, "AnimatedCat", tmpDir)
+	err := storage.InitPet(false, "cat", "AnimatedCat", tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize pet: %v", err)
 	}
@@ -147,6 +145,9 @@ func TestAnimatedFamiliar(t *testing.T) {
 		t.Error("Expected 2 frames in animated default animation")
 	}
 
+	// Set evolution to 1 so it shows cat art (not egg)
+	p.State.Evolution = 1
+
 	// Test that we can select the animation
 	now := time.Now()
 	health := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
@@ -177,7 +178,7 @@ func TestFamiliarStates(t *testing.T) {
 	tmpDir := t.TempDir()
 	petDir := filepath.Join(tmpDir, ".familiar")
 
-	err := storage.InitPet(false, "StateTestCat", tmpDir)
+	err := storage.InitPet(false, "cat", "StateTestCat", tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize pet: %v", err)
 	}
@@ -247,7 +248,7 @@ func TestPetDiscovery(t *testing.T) {
 
 	// Initialize pet in project root
 	projectRoot := filepath.Join(tmpDir, "project")
-	err = storage.InitPet(false, "DiscoveryTest", projectRoot)
+	err = storage.InitPet(false, "cat", "DiscoveryTest", projectRoot)
 	if err != nil {
 		t.Fatalf("Failed to initialize pet: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestReadmeExample(t *testing.T) {
 	petDir := filepath.Join(tmpDir, ".familiar")
 
 	// Initialize pet named "Pip"
-	err := storage.InitPet(false, "Pip", tmpDir)
+	err := storage.InitPet(false, "cat", "Pip", tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize pet: %v", err)
 	}
@@ -378,6 +379,59 @@ func TestReadmeExample(t *testing.T) {
  > ^ <`
 	if artStr != expectedDefaultArt {
 		t.Errorf("Expected default art after acknowledge:\n%s\nGot:\n%s", expectedDefaultArt, artStr)
+	}
+}
+
+func TestNewPetShowsAsEgg(t *testing.T) {
+	// Test that a freshly initialized pet (evolution 0) shows as an egg
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	// Initialize pet
+	err := storage.InitPet(false, "cat", "EggTest", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
+	}
+
+	// Load pet
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Verify evolution is 0
+	if p.State.Evolution != 0 {
+		t.Errorf("Expected evolution 0 for new pet, got %d", p.State.Evolution)
+	}
+	if p.Config.Evolution != 0 {
+		t.Errorf("Expected config evolution 0 for new pet, got %d", p.Config.Evolution)
+	}
+
+	// Check status - should show egg art
+	now := time.Now()
+	healthVal := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status := conditions.DeriveStatus(p, now, healthVal)
+	artStr := art.GetStaticArt(p, status)
+
+	// Verify it's the egg art
+	expectedEgg := `  ___  
+ /  . . \ 
+ \___/`
+	if artStr != expectedEgg {
+		t.Errorf("Expected egg art for new pet (evolution 0), got:\n%s\nExpected:\n%s", artStr, expectedEgg)
+	}
+
+	// Verify no special conditions that would override egg
+	if status.Conditions[conditions.CondStone] {
+		t.Error("New pet should not be stone")
+	}
+	if status.Conditions[conditions.CondInfirm] {
+		t.Error("New pet should not be infirm")
+	}
+	if status.Conditions[conditions.CondHasMessage] {
+		t.Error("New pet should not have message")
 	}
 }
 
