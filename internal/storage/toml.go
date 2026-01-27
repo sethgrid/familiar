@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/qwert/promptfamiliar/internal/pet"
+	"github.com/sethgrid/familiar/internal/pet"
 )
 
 const (
@@ -148,6 +148,17 @@ func InitPet(global bool, name string, baseDir string) error {
 			{Art: `  ___  
  /  . . \ 
  \___/`},
+		},
+	}
+
+	config.Animations["has-message"] = pet.AnimationConfig{
+		Source: "inline",
+		FPS:    1,
+		Loops:  1,
+		Frames: []pet.Frame{
+			{Art: ` /\_/\ 
+( o.o )
+ > ^ <*`},
 		},
 	}
 

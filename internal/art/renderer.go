@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/qwert/promptfamiliar/internal/conditions"
-	"github.com/qwert/promptfamiliar/internal/pet"
+	"github.com/sethgrid/familiar/internal/conditions"
+	"github.com/sethgrid/familiar/internal/pet"
 )
 
 func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, animations map[string]pet.AnimationConfig) string {
@@ -78,6 +78,9 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 	if status.Conditions[conditions.CondInfirm] {
 		return getInfirmCat()
 	}
+	if status.Conditions[conditions.CondHasMessage] {
+		return getHasMessageCat()
+	}
 	if p.State.Evolution == 0 {
 		return getEggCat()
 	}
@@ -106,4 +109,10 @@ func getEggCat() string {
 	return `  ___  
  /  . . \ 
  \___/`
+}
+
+func getHasMessageCat() string {
+	return ` /\_/\ 
+( o.o )
+ > ^ <*`
 }

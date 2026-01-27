@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qwert/promptfamiliar/internal/art"
-	"github.com/qwert/promptfamiliar/internal/conditions"
-	"github.com/qwert/promptfamiliar/internal/discovery"
-	"github.com/qwert/promptfamiliar/internal/health"
-	"github.com/qwert/promptfamiliar/internal/pet"
-	"github.com/qwert/promptfamiliar/internal/storage"
+	"github.com/sethgrid/familiar/internal/art"
+	"github.com/sethgrid/familiar/internal/conditions"
+	"github.com/sethgrid/familiar/internal/discovery"
+	"github.com/sethgrid/familiar/internal/health"
+	"github.com/sethgrid/familiar/internal/pet"
+	"github.com/sethgrid/familiar/internal/storage"
 )
 
 func TestNonAnimatedFamiliar(t *testing.T) {
@@ -269,4 +269,121 @@ func TestPetDiscovery(t *testing.T) {
 	if statePath != expectedPath {
 		t.Errorf("Expected state path %s, got %s", expectedPath, statePath)
 	}
+}
+
+func TestReadmeExample(t *testing.T) {
+	// Test the example from README: Pip with has-message and acknowledge
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	// Initialize pet named "Pip"
+	err := storage.InitPet(false, "Pip", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
+	}
+
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Set evolution to 1 so it shows cat art (not egg)
+	p.State.Evolution = 1
+	// Set a message
+	p.State.Message = "Attn Devs — new local config defaults available."
+	// Ensure good stats so it's not in a bad state
+	p.State.Hunger = 75
+	p.State.Happiness = 80
+	p.State.Energy = 60
+
+	// Save state
+	err = storage.SavePetState(p, statePath)
+	if err != nil {
+		t.Fatalf("Failed to save state: %v", err)
+	}
+
+	// Reload to get fresh state
+	p, err = storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to reload pet: %v", err)
+	}
+
+	now := time.Now()
+	healthVal := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status := conditions.DeriveStatus(p, now, healthVal)
+
+	// Verify name
+	if p.Config.Name != "Pip" {
+		t.Errorf("Expected name 'Pip', got '%s'", p.Config.Name)
+	}
+
+	// Verify has-message condition
+	if !status.Conditions[conditions.CondHasMessage] {
+		t.Error("Expected has-message condition to be set")
+	}
+	if status.Primary != conditions.CondHasMessage {
+		t.Errorf("Expected primary condition to be has-message, got %s", status.Primary)
+	}
+
+	// Verify message
+	if p.State.Message != "Attn Devs — new local config defaults available." {
+		t.Errorf("Expected message 'Attn Devs — new local config defaults available.', got '%s'", p.State.Message)
+	}
+
+	// Verify art for has-message (should have asterisk)
+	artStr := art.GetStaticArt(p, status)
+	expectedHasMessageArt := ` /\_/\ 
+( o.o )
+ > ^ <*`
+	if artStr != expectedHasMessageArt {
+		t.Errorf("Expected has-message art:\n%s\nGot:\n%s", expectedHasMessageArt, artStr)
+	}
+
+	// Now test acknowledge
+	p.State.Message = ""
+	p.State.Happiness = min(100, p.State.Happiness+5)
+	p.State.Energy = min(100, p.State.Energy+5)
+
+	// Save state after acknowledge
+	err = storage.SavePetState(p, statePath)
+	if err != nil {
+		t.Fatalf("Failed to save state after acknowledge: %v", err)
+	}
+
+	// Reload and check acknowledge state
+	p, err = storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to reload pet after acknowledge: %v", err)
+	}
+
+	healthVal = health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status = conditions.DeriveStatus(p, now, healthVal)
+
+	// Verify message is cleared
+	if p.State.Message != "" {
+		t.Errorf("Expected message to be cleared after acknowledge, got '%s'", p.State.Message)
+	}
+
+	// Verify happy condition (or at least not has-message)
+	if status.Conditions[conditions.CondHasMessage] {
+		t.Error("Expected has-message condition to be cleared after acknowledge")
+	}
+
+	// Verify art after acknowledge (should be default cat, no asterisk)
+	artStr = art.GetStaticArt(p, status)
+	expectedDefaultArt := ` /\_/\ 
+( o.o )
+ > ^ <`
+	if artStr != expectedDefaultArt {
+		t.Errorf("Expected default art after acknowledge:\n%s\nGot:\n%s", expectedDefaultArt, artStr)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -3,9 +3,18 @@
 A terminal-based pet system - a familiar that lives in your terminal that enjoys interaction. Based on a growing catalogue of pets, familiars can be stored per project or directory. One fun use is to have familiars nudge project contributors to critical project updates.
 
 
+### Example: Project Familiar + Prompt + Messages
+
+Add a tiny familiar to your prompt:
+
+```bash
+export PS1='$(familiar health) \w$ '
+```
+
+You're working in a shared repo:
+
 ```
 ~/code/sharedproject 🐾
-
 git pull origin main
 # ...
 # updating configs...
@@ -30,6 +39,7 @@ Message: Attn Devs — new local config defaults available.
 ~/code/sharedproject 💬
 familiar acknowledge
 
+```
 Pip
 happy
 
@@ -71,9 +81,30 @@ familiar init --global MyCat
 
 ### Check Status
 
+**Default (concise):**
 ```bash
 familiar status
 ```
+
+Shows:
+- One short state summary line
+- ASCII art / animation
+- Optional message if present
+
+**Verbose (stats card):**
+```bash
+familiar status -v
+# or
+familiar status --verbose
+```
+
+Shows:
+- Same art/animation as default
+- Stats card above the art:
+  - Health (derived)
+  - Hunger / Happiness / Energy
+  - Evolution
+  - Flags like stone / infirm / lonely / hungry
 
 ### Interact with Your Familiar
 
@@ -85,13 +116,39 @@ familiar message "ship is red"  # Set a message
 familiar acknowledge  # Acknowledge your familiar
 ```
 
+**Acknowledge Behavior:**
+
+Normal mode:
+```bash
+familiar acknowledge
+```
+- Clears the message
+- Updates mood/energy a bit
+- Shows happy art (regardless of previous state)
+- Displays confirmation message
+
+Silent mode (for scripts/hooks):
+```bash
+familiar acknowledge -s
+# or
+familiar acknowledge --silent
+```
+- Same state changes (clears message, bumps happiness)
+- No output (just exit 0)
+- Useful for scripts / hooks that don't want to spam stdout
+
 ### Prompt Integration
 
 Add to your shell prompt (e.g., in `~/.bashrc` or `~/.zshrc`):
 
 ```bash
-export PS1='$(familiar health) $ '
+export PS1='$(familiar health) \w$ '
 ```
+
+This will show:
+- 🐾 when your familiar is healthy and happy
+- 💬 when your familiar has a message waiting
+- Other indicators based on your familiar's state
 
 ## ASCII Cat Familiar
 

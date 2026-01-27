@@ -3,7 +3,7 @@ package conditions
 import (
 	"time"
 
-	"github.com/qwert/promptfamiliar/internal/pet"
+	"github.com/sethgrid/familiar/internal/pet"
 )
 
 type Condition string
