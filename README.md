@@ -19,7 +19,7 @@ Check what the familiar is trying to say:
 ~/code/sharedproject 💬
 familiar status
 
-Pip (evolution 1)
+Pip
 has-message
 
  /\_/\ 
@@ -29,6 +29,14 @@ has-message
 Message: Attn Devs — new local config defaults available.
 ~/code/sharedproject 💬
 familiar acknowledge
+
+Pip
+happy
+
+ /\_/\ 
+( o.o )
+ > ^ <*
+Pip feels acknowledged
 
 ~/code/sharedproject 🐾
 ```
