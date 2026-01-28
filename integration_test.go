@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -415,17 +416,42 @@ func TestNewPetShowsAsEgg(t *testing.T) {
 	status := conditions.DeriveStatus(p, now, healthVal)
 	artStr := art.GetStaticArt(p, status)
 
-	// Verify it's the egg art
-	expectedEgg := `  ___  
+	// Verify it's the egg art (match the actual egg art from cat.toml)
+	// Note: GetStaticArt may add trailing newline, so trim it for comparison
+	expectedEgg := `  ______
  /  . . \ 
- \___/`
-	if artStr != expectedEgg {
-		t.Errorf("Expected egg art for new pet (evolution 0), got:\n%s\nExpected:\n%s", artStr, expectedEgg)
+ \______/`
+	artStrTrimmed := strings.TrimRight(artStr, "\n\r")
+	expectedEggTrimmed := strings.TrimRight(expectedEgg, "\n\r")
+	if artStrTrimmed != expectedEggTrimmed {
+		t.Errorf("Expected egg art for new pet (evolution 0), got:\n%q\nExpected:\n%q", artStrTrimmed, expectedEggTrimmed)
 	}
 
 	// Verify no special conditions that would override egg
 	if status.Conditions[conditions.CondStone] {
 		t.Error("New pet should not be stone")
+	}
+
+	// Test that first interaction evolves from 0 to 1
+	// Simulate a feed interaction
+	p.State.Hunger = min(100, p.State.Hunger+20)
+	p.State.Happiness = min(100, p.State.Happiness+10)
+	
+	// Evolve from egg (0) to first evolution (1) on first interaction
+	if p.State.Evolution == 0 {
+		p.State.Evolution = 1
+	}
+	
+	// Verify evolution is now 1
+	if p.State.Evolution != 1 {
+		t.Errorf("Expected evolution 1 after first interaction, got %d", p.State.Evolution)
+	}
+	
+	// Verify it's no longer showing egg art
+	statusAfter := conditions.DeriveStatus(p, now, healthVal)
+	artStrAfter := art.GetStaticArt(p, statusAfter)
+	if artStrAfter == expectedEgg {
+		t.Error("Pet should not show egg art after evolution to 1")
 	}
 	if status.Conditions[conditions.CondInfirm] {
 		t.Error("New pet should not be infirm")

@@ -1,7 +1,7 @@
 version = "1.0"
 name = "{{NAME}}"
 evolutionMode = "by-age"
-evolution = 1
+evolution = 0
 maxEvolution = 5
 createdAt = {{CREATED_AT}}
 decayEnabled = true
@@ -55,12 +55,271 @@ art = '''
 
 [animations.egg]
 source = "inline"
-fps = 1
-loops = 1
+fps = 2
+loops = -1
 
 [[animations.egg.frames]]
 art = '''
-  ___  
+  _____ 
  /  . . \ 
- \___/
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ / . .  \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ /  . . \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ /  . . \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ /  . . \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ /  . . \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ /  . . \ 
+ \______/
+'''
+
+[[animations.egg.frames]]
+art = '''
+  _____ 
+ / . .  \ 
+ \______/
+'''
+
+[animations.lonely]
+source = "inline"
+fps = 2
+loops = -1
+
+[[animations.lonely.frames]]
+art = '''
+    o-
+   /|\
+   / \
+'''
+
+[[animations.lonely.frames]]
+art = '''
+   -o
+   /|\
+   / \
+'''
+
+[[animations.lonely.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.lonely.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[animations.hungry]
+source = "inline"
+fps = 3
+loops = -1
+
+[[animations.hungry.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.hungry.frames]]
+art = '''
+    o
+   / \
+   / \
+'''
+
+[[animations.hungry.frames]]
+art = '''
+    o
+   / \
+   / \
+'''
+
+[[animations.hungry.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[animations.tired]
+source = "inline"
+fps = 2
+loops = -1
+
+[[animations.tired.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.tired.frames]]
+art = '''
+    -
+   /|\
+   / \
+'''
+
+[[animations.tired.frames]]
+art = '''
+   ---
+   /|\
+   / \
+'''
+
+[[animations.tired.frames]]
+art = '''
+    -
+   /|\
+   / \
+'''
+
+[animations.sad]
+source = "inline"
+fps = 2
+loops = -1
+
+[[animations.sad.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.sad.frames]]
+art = '''
+    o
+   /|
+    \
+'''
+
+[[animations.sad.frames]]
+art = '''
+    o
+    |
+      
+'''
+
+[[animations.sad.frames]]
+art = '''
+    o
+    
+    
+'''
+
+[animations.happy]
+source = "inline"
+fps = 6
+loops = -1
+
+[[animations.happy.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.happy.frames]]
+art = '''
+  \o/
+   |
+  / \
+'''
+
+[[animations.happy.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.happy.frames]]
+art = '''
+  \o/
+   |
+  / \
+'''
+
+[[animations.happy.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''
+
+[[animations.happy.frames]]
+art = '''
+  \o/
+   |
+  / \
+'''
+
+[animations.stone]
+source = "inline"
+fps = 1
+loops = 1
+
+[[animations.stone.frames]]
+art = '''
+    x
+   /|\
+   / \
+'''
+
+[animations.infirm]
+source = "inline"
+fps = 1
+loops = -1
+
+[[animations.infirm.frames]]
+art = '''
+    x
+   /|\
+   / \
+'''
+
+[[animations.infirm.frames]]
+art = '''
+    o
+   /|\
+   / \
 '''

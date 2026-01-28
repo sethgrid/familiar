@@ -42,6 +42,9 @@ func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, anim
 	if conds[conditions.CondInfirm] {
 		parts = append(parts, "infirm")
 	}
+	if conds[conditions.CondLonely] {
+		parts = append(parts, "lonely")
+	}
 	if conds[conditions.CondHungry] {
 		parts = append(parts, "hungry")
 	}
