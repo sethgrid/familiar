@@ -52,8 +52,8 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 4: hungry
-	if p.State.Hunger < 50 {
+	// Priority 4: hungry (hunger is now inverted: higher = more hungry)
+	if p.State.Hunger > 50 {
 		conds[CondHungry] = true
 		if !contains(allOrdered, CondHungry) {
 			allOrdered = append(allOrdered, CondHungry)
@@ -85,7 +85,8 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 	}
 
 	// Priority 8: happy (default if no other conditions and attributes high)
-	if len(allOrdered) == 0 || (p.State.Hunger > 70 && p.State.Happiness > 70 && p.State.Energy > 70) {
+	// Hunger is inverted: lower is better, so check Hunger < 30 (not hungry)
+	if len(allOrdered) == 0 || (p.State.Hunger < 30 && p.State.Happiness > 70 && p.State.Energy > 70) {
 		conds[CondHappy] = true
 		if !contains(allOrdered, CondHappy) {
 			allOrdered = append(allOrdered, CondHappy)

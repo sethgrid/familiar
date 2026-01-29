@@ -53,7 +53,7 @@ func TestFormatConditions(t *testing.T) {
 		{
 			name:     "conditions with hyphens",
 			conds:    []Condition{CondHasMessage},
-			expected: "has-message",
+			expected: "has a message",
 		},
 		{
 			name:     "nil slice",

@@ -28,7 +28,8 @@ func ApplyTimeStep(p *Pet, now time.Time) error {
 	}
 
 	// Apply decay
-	hunger := float64(p.State.Hunger) - elapsedHours*p.Config.HungerDecayPerHour*mult
+	// Hunger is inverted: decay increases hunger (higher = more hungry)
+	hunger := float64(p.State.Hunger) + elapsedHours*p.Config.HungerDecayPerHour*mult
 	happiness := float64(p.State.Happiness) - elapsedHours*p.Config.HappinessDecayPerHour*mult
 	energy := float64(p.State.Energy) - elapsedHours*p.Config.EnergyDecayPerHour*mult
 

@@ -10,11 +10,15 @@ const (
 func ComputeHealth(hunger, happiness, energy int, mode ComputationMode) int {
 	var health int
 
+	// Hunger is inverted: lower hunger = better health
+	// Convert hunger to a "satisfaction" score: 100 - hunger
+	hungerScore := 100 - hunger
+
 	switch mode {
 	case ComputationWeighted:
-		health = int(float64(hunger)*0.3 + float64(happiness)*0.4 + float64(energy)*0.3)
+		health = int(float64(hungerScore)*0.3 + float64(happiness)*0.4 + float64(energy)*0.3)
 	default: // average
-		health = (hunger + happiness + energy) / 3
+		health = (hungerScore + happiness + energy) / 3
 	}
 
 	// Clamp to [0, 100]

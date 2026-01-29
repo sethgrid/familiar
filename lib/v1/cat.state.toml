@@ -1,6 +1,6 @@
 configRef = "{{CONFIG_REF}}"
 nameOverride = "{{NAME}}"
-hunger = 75
+hunger = 10
 happiness = 80
 energy = 60
 evolution = 0
