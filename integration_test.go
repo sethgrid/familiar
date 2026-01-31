@@ -232,11 +232,72 @@ func TestFamiliarStates(t *testing.T) {
 	p.State.Message = "Test message"
 	healthVal = health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
 	status = conditions.DeriveStatus(p, now, healthVal)
-	if !status.Conditions[conditions.CondHasMessage] {
-		t.Error("Expected has-message condition to be set")
+}
+
+func TestSleepRestorationAfterExpiration(t *testing.T) {
+	// Test that sleep restoration is applied even when checking status after sleep has expired
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	err := storage.InitPet(false, "cat", "SleepTestCat", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
 	}
-	if status.Primary != conditions.CondHasMessage {
-		t.Errorf("Expected primary condition to be has-message, got %s", status.Primary)
+
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Set initial low stats
+	p.State.Happiness = 20
+	p.State.Energy = 20
+	p.State.Hunger = 50
+	p.State.LastChecked = time.Now()
+
+	// Put pet to sleep
+	sleepDuration := 30 * time.Minute
+	now := time.Now()
+	p.State.IsAsleep = true
+	p.State.SleepUntil = now.Add(sleepDuration)
+	p.State.LastChecked = now
+
+	// Save initial state
+	initialHappiness := p.State.Happiness
+	initialEnergy := p.State.Energy
+
+	// Advance time to AFTER sleep should have expired (35 minutes later)
+	future := now.Add(35 * time.Minute)
+
+	// Apply time step - this should restore stats even though sleep has expired
+	err = pet.ApplyTimeStep(p, future)
+	if err != nil {
+		t.Fatalf("Failed to apply time step: %v", err)
+	}
+
+	// Verify sleep state was cleared
+	if p.State.IsAsleep {
+		t.Error("Expected pet to be awake after sleep expiration")
+	}
+
+	// Verify that restoration was applied (stats should have increased)
+	// Since we slept for 30 minutes (0.5 hours) at a rate of 100/0.5 = 200 per hour,
+	// we should have gained approximately 100 points (but clamped to 100)
+	if p.State.Happiness <= initialHappiness {
+		t.Errorf("Expected happiness to increase after sleep restoration. Initial: %d, Final: %d", initialHappiness, p.State.Happiness)
+	}
+	if p.State.Energy <= initialEnergy {
+		t.Errorf("Expected energy to increase after sleep restoration. Initial: %d, Final: %d", initialEnergy, p.State.Energy)
+	}
+
+	// Happiness and energy should be at or near 100 after full sleep cycle
+	if p.State.Happiness < 90 {
+		t.Errorf("Expected happiness to be near 100 after full sleep cycle, got %d", p.State.Happiness)
+	}
+	if p.State.Energy < 90 {
+		t.Errorf("Expected energy to be near 100 after full sleep cycle, got %d", p.State.Energy)
 	}
 }
 

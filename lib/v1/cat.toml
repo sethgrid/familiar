@@ -13,6 +13,7 @@ stoneThreshold = 10
 infirmEnabled = true
 infirmDecayMultiplier = 1.5
 stoneDecayMultiplier = 0.1
+sleepDuration = "30m"
 eventChance = 0.01
 healthComputation = "average"
 interactionThreshold = 3
