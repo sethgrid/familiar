@@ -29,6 +29,10 @@ type PetState struct {
 
 	IsInfirm bool `toml:"isInfirm"`
 	IsStone  bool `toml:"isStone"`
+	IsAsleep bool `toml:"isAsleep"`
+
+	SleepUntil    time.Time `toml:"sleepUntil"`
+	SleepAttempts int       `toml:"sleepAttempts"` // Tracks attempts to interact while asleep
 
 	Message string `toml:"message"`
 

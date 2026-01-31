@@ -11,6 +11,7 @@ type Condition string
 const (
 	CondHasMessage Condition = "has-message"
 	CondStone      Condition = "stone"
+	CondAsleep     Condition = "asleep"
 	CondInfirm     Condition = "infirm"
 	CondLonely     Condition = "lonely"
 	CondHungry     Condition = "hungry"
@@ -44,7 +45,15 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 3: infirm
+	// Priority 3: asleep
+	if p.State.IsAsleep {
+		conds[CondAsleep] = true
+		if !contains(allOrdered, CondAsleep) {
+			allOrdered = append(allOrdered, CondAsleep)
+		}
+	}
+
+	// Priority 4: infirm
 	if p.State.IsInfirm || (health < 30 && p.Config.InfirmEnabled) {
 		conds[CondInfirm] = true
 		if !contains(allOrdered, CondInfirm) {
@@ -52,7 +61,7 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 4: hungry (hunger is now inverted: higher = more hungry)
+	// Priority 5: hungry (hunger is now inverted: higher = more hungry)
 	if p.State.Hunger > 50 {
 		conds[CondHungry] = true
 		if !contains(allOrdered, CondHungry) {
@@ -60,7 +69,7 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 5: lonely
+	// Priority 6: lonely
 	if isLonely(p, now) {
 		conds[CondLonely] = true
 		if !contains(allOrdered, CondLonely) {
@@ -68,7 +77,7 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 6: tired
+	// Priority 7: tired
 	if p.State.Energy < 40 {
 		conds[CondTired] = true
 		if !contains(allOrdered, CondTired) {
@@ -76,7 +85,7 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 7: sad
+	// Priority 8: sad
 	if p.State.Happiness < 50 {
 		conds[CondSad] = true
 		if !contains(allOrdered, CondSad) {
@@ -84,7 +93,7 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 8: happy (default if no other conditions and attributes high)
+	// Priority 9: happy (default if no other conditions and attributes high)
 	// Hunger is inverted: lower is better, so check Hunger < 30 (not hungry)
 	if len(allOrdered) == 0 || (p.State.Hunger < 30 && p.State.Happiness > 70 && p.State.Energy > 70) {
 		conds[CondHappy] = true
@@ -170,12 +179,29 @@ func FormatConditions(conds []Condition) string {
 		}
 	}
 
+	// Check if asleep is present
+	hasAsleep := false
+	for _, c := range conds {
+		if c == CondAsleep {
+			hasAsleep = true
+			break
+		}
+	}
+
 	// If stone is present, only show stone and optionally has-message
 	if hasStone {
 		if hasMessage {
 			return "stone and has a message"
 		}
 		return "stone"
+	}
+
+	// If asleep is present, show asleep and optionally has-message
+	if hasAsleep {
+		if hasMessage {
+			return "asleep, and can talk in their sleep with a message"
+		}
+		return "asleep"
 	}
 
 	// Normal formatting for non-stone conditions

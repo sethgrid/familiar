@@ -22,6 +22,7 @@ const (
 	DefaultStoneThreshold    = 10
 	DefaultInfirmDecayMultiplier = 1.5
 	DefaultStoneDecayMultiplier  = 0.1
+	DefaultSleepDuration     = 30 * time.Minute
 	DefaultEventChance        = 0.01
 	DefaultInteractionThreshold = 3
 	DefaultCacheTTL           = 24 * time.Hour
@@ -46,8 +47,48 @@ func LoadPet(configPath, statePath string) (*pet.Pet, error) {
 	}
 
 	var config pet.PetConfig
+	
+	// Try to unmarshal directly first
 	if err := toml.Unmarshal(configData, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		// If it fails, try parsing as map to handle duration strings
+		var configMap map[string]interface{}
+		if err2 := toml.Unmarshal(configData, &configMap); err2 != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+
+		// Parse sleepDuration if it's a string
+		if sleepDur, ok := configMap["sleepDuration"]; ok {
+			if sleepDurStr, ok := sleepDur.(string); ok {
+				parsed, err := time.ParseDuration(sleepDurStr)
+				if err == nil {
+					configMap["sleepDuration"] = int64(parsed)
+				}
+			}
+		}
+
+		// Re-marshal and unmarshal to get proper struct
+		configBytes, err := toml.Marshal(configMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-marshal config: %w", err)
+		}
+
+		if err := toml.Unmarshal(configBytes, &config); err != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+	} else {
+		// Successfully unmarshaled, but check if sleepDuration needs parsing
+		// (This handles the case where it was stored as a string in an existing file)
+		var configMap map[string]interface{}
+		if err := toml.Unmarshal(configData, &configMap); err == nil {
+			if sleepDur, ok := configMap["sleepDuration"]; ok {
+				if sleepDurStr, ok := sleepDur.(string); ok {
+					parsed, err := time.ParseDuration(sleepDurStr)
+					if err == nil {
+						config.SleepDuration = parsed
+					}
+				}
+			}
+		}
 	}
 
 	return &pet.Pet{
