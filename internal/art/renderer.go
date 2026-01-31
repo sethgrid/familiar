@@ -19,8 +19,9 @@ func isTerminal() bool {
 func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, animations map[string]pet.AnimationConfig) string {
 	// If evolution is 0 and no special conditions, return "egg"
 	if evolution == 0 {
-		hasSpecialCondition := conds[conditions.CondHasMessage] || 
-			conds[conditions.CondStone] || 
+		hasSpecialCondition := conds[conditions.CondHasMessage] ||
+			conds[conditions.CondStone] ||
+			conds[conditions.CondAsleep] ||
 			conds[conditions.CondInfirm]
 		if !hasSpecialCondition {
 			// Check if egg animation exists
@@ -30,14 +31,32 @@ func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, anim
 		}
 	}
 
-	// Build key from conditions
+	// Special handling: if asleep, prioritize it strongly
+	// Asleep should override other lower-priority conditions like tired, happy, etc.
+	if conds[conditions.CondAsleep] {
+		// Try asleep animation first (with evolution prefix if applicable)
+		if evolution > 0 {
+			evolKey := fmt.Sprintf("e%d:asleep", evolution)
+			if _, exists := animations[evolKey]; exists {
+				return evolKey
+			}
+		}
+		if _, exists := animations["asleep"]; exists {
+			return "asleep"
+		}
+	}
+
+	// Build key from conditions (check in priority order)
 	var parts []string
-	
+
 	if conds[conditions.CondHasMessage] {
 		parts = append(parts, "has-message")
 	}
 	if conds[conditions.CondStone] {
 		parts = append(parts, "stone")
+	}
+	if conds[conditions.CondAsleep] {
+		parts = append(parts, "asleep")
 	}
 	if conds[conditions.CondInfirm] {
 		parts = append(parts, "infirm")
@@ -89,7 +108,7 @@ func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, anim
 
 func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 	key := ChooseAnimationKey(status.Conditions, p.State.Evolution, p.Config.Animations)
-	
+
 	// Try to get animation from config
 	if anim, exists := p.Config.Animations[key]; exists && len(anim.Frames) > 0 {
 		// If animation has multiple frames and animations are enabled, play animation
@@ -101,16 +120,24 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 		// Otherwise return first frame
 		return anim.Frames[0].Art
 	}
-	
-	// Fallback to hardcoded art based on state
+
+	// Fallback to hardcoded art based on state (check in priority order)
+	if status.Conditions[conditions.CondHasMessage] {
+		return getHasMessageCat()
+	}
 	if status.Conditions[conditions.CondStone] {
 		return getStoneCat()
 	}
+	if status.Conditions[conditions.CondAsleep] {
+		// For asleep, try to get from animation config first, otherwise fallback
+		if anim, exists := p.Config.Animations["asleep"]; exists && len(anim.Frames) > 0 {
+			return anim.Frames[0].Art
+		}
+		// No hardcoded asleep art, use default
+		return getDefaultCat()
+	}
 	if status.Conditions[conditions.CondInfirm] {
 		return getInfirmCat()
-	}
-	if status.Conditions[conditions.CondHasMessage] {
-		return getHasMessageCat()
 	}
 	if p.State.Evolution == 0 {
 		return getEggCat()
@@ -163,7 +190,7 @@ func playAnimation(anim pet.AnimationConfig) {
 		frameIdx := i % len(anim.Frames)
 		trimmedArt := trimmedFrames[frameIdx]
 		frame := anim.Frames[frameIdx]
-		
+
 		// Use frame-specific duration if available, otherwise use calculated duration
 		duration := frameDuration
 		if frame.MS > 0 {
@@ -195,7 +222,7 @@ func playAnimation(anim pet.AnimationConfig) {
 				fmt.Fprint(os.Stdout, "\033[1B") // Move down exactly 1 line
 			}
 		}
-		
+
 		// Move back up to start - we moved down (maxLines-1) times, so move back up that much
 		// After this, we're back at the start position (line 1)
 		if maxLines > 1 {
@@ -206,19 +233,19 @@ func playAnimation(anim pet.AnimationConfig) {
 		// After printing (no trailing newline), cursor will be at the END of the last line
 		fmt.Fprint(os.Stdout, trimmedArt)
 		os.Stdout.Sync()
-		
+
 		// Add delay between frames (except for last frame)
 		if i < totalFrames-1 {
 			time.Sleep(duration)
 		}
 	}
-	
+
 	// After animation, move cursor to below the art
 	// We're currently at the start of the line AFTER the last frame
 	// The last frame was maxLines tall, so we're already positioned correctly
 	// Just ensure cursor is visible and add a newline for spacing
 	fmt.Fprint(os.Stdout, "\n")
-	
+
 	// Show cursor
 	fmt.Fprint(os.Stdout, "\033[?25h")
 	os.Stdout.Sync()

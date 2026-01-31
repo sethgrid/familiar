@@ -5,8 +5,10 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/sethgrid/familiar/internal/art"
 	"github.com/sethgrid/familiar/internal/conditions"
 	"github.com/sethgrid/familiar/internal/discovery"
@@ -20,7 +22,7 @@ var (
 	configPath string
 )
 
-const Version = "v0.2.0"
+const Version = "v0.3.0"
 
 var familiarNames = []string{
 	"Pip",
@@ -59,7 +61,7 @@ func main() {
 	rootCmd.AddCommand(playCmd)
 	rootCmd.AddCommand(restCmd)
 	rootCmd.AddCommand(healCmd)
-	rootCmd.AddCommand(healthCmd)
+	rootCmd.AddCommand(adminCmd)
 	rootCmd.AddCommand(messageCmd)
 	rootCmd.AddCommand(acknowledgeCmd)
 	rootCmd.AddCommand(awakenCmd)
@@ -457,7 +459,12 @@ var restCmd = &cobra.Command{
 	},
 }
 
-var healthCmd = &cobra.Command{
+var adminCmd = &cobra.Command{
+	Use:   "admin",
+	Short: "Administrative commands for familiar management",
+}
+
+var adminHealthCmd = &cobra.Command{
 	Use:   "health",
 	Short: "Get health status for prompt",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -502,6 +509,192 @@ var healthCmd = &cobra.Command{
 			return nil
 		})
 	},
+}
+
+var adminCompletionCmd = &cobra.Command{
+	Use:   "completion [bash|zsh|fish|powershell]",
+	Short: "Generate shell completion script",
+	Long: `Generate shell completion script for familiar.
+
+To load completions:
+
+Bash:
+  $ source <(familiar admin completion bash)
+
+  # To load completions for each session, execute once:
+  # Linux:
+  $ familiar admin completion bash > /etc/bash_completion.d/familiar
+  # macOS:
+  $ familiar admin completion bash > /usr/local/etc/bash_completion.d/familiar
+
+Zsh:
+  # If shell completion is not already enabled in your environment,
+  # you will need to enable it.  You can execute the following once:
+  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
+
+  # To load completions for each session, execute once:
+  $ familiar admin completion zsh > "${fpath[1]}/_familiar"
+
+  # You will need to start a new shell for this setup to take effect.
+
+Fish:
+  $ familiar admin completion fish | source
+
+  # To load completions for each session, execute once:
+  $ familiar admin completion fish > ~/.config/fish/completions/familiar.fish
+
+PowerShell:
+  PS> familiar admin completion powershell | Out-String | Invoke-Expression
+
+  # To load completions for each session:
+  PS> familiar admin completion powershell > familiar.ps1
+  # and source this file from your PowerShell profile.
+`,
+	ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+	Args:      cobra.ExactValidArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		root := cmd.Root()
+		switch args[0] {
+		case "bash":
+			return root.GenBashCompletion(os.Stdout)
+		case "zsh":
+			return root.GenZshCompletion(os.Stdout)
+		case "fish":
+			return root.GenFishCompletion(os.Stdout, true)
+		case "powershell":
+			return root.GenPowerShellCompletion(os.Stdout)
+		}
+		return fmt.Errorf("unsupported shell: %s", args[0])
+	},
+}
+
+var adminUpdateCmd = &cobra.Command{
+	Use:   "update [pet-type]",
+	Short: "Update pet config from template (preserves customizations)",
+	Long: `Update your familiar's config file from the latest template.
+
+This command:
+  - Loads the latest template for your pet type (or the specified type)
+  - Merges it with your existing config
+  - Preserves your customizations (name, custom settings, etc.)
+  - Updates animations and default settings from the template
+
+If pet-type is not specified, it will be auto-detected from your current pet.
+`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, configPath, _, err := loadPet()
+		if err != nil {
+			return err
+		}
+
+		var petType string
+		if len(args) > 0 {
+			petType = args[0]
+		} else {
+			// Try to detect pet type by checking which template matches
+			petType, err = detectPetType(p)
+			if err != nil {
+				return fmt.Errorf("could not auto-detect pet type. Please specify: %w", err)
+			}
+		}
+
+		// Find lib directory
+		libDir, err := storage.FindLibDir()
+		if err != nil {
+			return fmt.Errorf("failed to find lib directory: %w", err)
+		}
+
+		// Load template
+		templatePath := filepath.Join(libDir, petType+".toml")
+		templateData, err := os.ReadFile(templatePath)
+		if err != nil {
+			return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
+		}
+
+		// Replace placeholders with valid dummy values for parsing
+		// We need valid TOML syntax to parse, but the actual values don't matter
+		// since we'll merge with existing config anyway
+		templateContent := string(templateData)
+		now := time.Now()
+		dummyName := "TemplatePet"
+		dummyCreatedAt := now.Format(time.RFC3339Nano)
+
+		templateContent = strings.ReplaceAll(templateContent, "{{NAME}}", dummyName)
+		templateContent = strings.ReplaceAll(templateContent, "{{CREATED_AT}}", dummyCreatedAt)
+
+		// Parse template - handle duration strings like LoadPet does
+		var templateConfig pet.PetConfig
+
+		// Try to unmarshal directly first
+		if err := toml.Unmarshal([]byte(templateContent), &templateConfig); err != nil {
+			// If it fails, try parsing as map to handle duration strings
+			var configMap map[string]interface{}
+			if err2 := toml.Unmarshal([]byte(templateContent), &configMap); err2 != nil {
+				return fmt.Errorf("failed to parse template: %w", err)
+			}
+
+			// Parse sleepDuration if it's a string
+			if sleepDur, ok := configMap["sleepDuration"]; ok {
+				if sleepDurStr, ok := sleepDur.(string); ok {
+					parsed, err := time.ParseDuration(sleepDurStr)
+					if err == nil {
+						configMap["sleepDuration"] = int64(parsed)
+					}
+				}
+			}
+
+			// Re-marshal and unmarshal to get proper struct
+			configBytes, err := toml.Marshal(configMap)
+			if err != nil {
+				return fmt.Errorf("failed to re-marshal template: %w", err)
+			}
+
+			if err := toml.Unmarshal(configBytes, &templateConfig); err != nil {
+				return fmt.Errorf("failed to parse template: %w", err)
+			}
+		} else {
+			// Successfully unmarshaled, but check if sleepDuration needs parsing
+			var configMap map[string]interface{}
+			if err := toml.Unmarshal([]byte(templateContent), &configMap); err == nil {
+				if sleepDur, ok := configMap["sleepDuration"]; ok {
+					if sleepDurStr, ok := sleepDur.(string); ok {
+						parsed, err := time.ParseDuration(sleepDurStr)
+						if err == nil {
+							templateConfig.SleepDuration = parsed
+						}
+					}
+				}
+			}
+		}
+
+		// Merge: preserve user values, update from template
+		mergedConfig := mergeConfig(p.Config, templateConfig)
+
+		// Save merged config
+		configData, err := toml.Marshal(mergedConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal config: %w", err)
+		}
+
+		if err := os.WriteFile(configPath, configData, 0644); err != nil {
+			return fmt.Errorf("failed to write config: %w", err)
+		}
+
+		petName := p.Config.Name
+		if p.State.NameOverride != "" {
+			petName = p.State.NameOverride
+		}
+
+		fmt.Printf("%s's config has been updated from %s template\n", petName, petType)
+		return nil
+	},
+}
+
+func init() {
+	adminCmd.AddCommand(adminHealthCmd)
+	adminCmd.AddCommand(adminCompletionCmd)
+	adminCmd.AddCommand(adminUpdateCmd)
 }
 
 var messageCmd = &cobra.Command{
@@ -754,4 +947,124 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// detectPetType tries to determine the pet type by comparing animations with known templates
+func detectPetType(p *pet.Pet) (string, error) {
+	libDir, err := storage.FindLibDir()
+	if err != nil {
+		return "", err
+	}
+
+	// Check known pet types
+	knownTypes := []string{"cat", "dancer"}
+
+	for _, petType := range knownTypes {
+		templatePath := filepath.Join(libDir, petType+".toml")
+		templateData, err := os.ReadFile(templatePath)
+		if err != nil {
+			continue
+		}
+
+		// Replace placeholders with valid dummy values for parsing
+		templateContent := string(templateData)
+		now := time.Now()
+		dummyName := "TemplatePet"
+		dummyCreatedAt := now.Format(time.RFC3339Nano)
+
+		templateContent = strings.ReplaceAll(templateContent, "{{NAME}}", dummyName)
+		templateContent = strings.ReplaceAll(templateContent, "{{CREATED_AT}}", dummyCreatedAt)
+
+		var templateConfig pet.PetConfig
+		if err := toml.Unmarshal([]byte(templateContent), &templateConfig); err != nil {
+			continue
+		}
+
+		// Compare default animations to see if they match
+		if matchesPetType(p, &templateConfig) {
+			return petType, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not match pet to any known template")
+}
+
+// matchesPetType checks if the pet's config matches a template type
+func matchesPetType(p *pet.Pet, template *pet.PetConfig) bool {
+	// Compare key characteristics
+	// Check if default animation matches (simplified check)
+	if p.Config.Animations != nil && template.Animations != nil {
+		petDefault, petHasDefault := p.Config.Animations["default"]
+		templateDefault, templateHasDefault := template.Animations["default"]
+
+		if petHasDefault && templateHasDefault {
+			// Compare first frame of default animation
+			if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
+				petArt := petDefault.Frames[0].Art
+				templateArt := templateDefault.Frames[0].Art
+				// Simple comparison - if art matches, likely same type
+				if petArt == templateArt {
+					return true
+				}
+			}
+		}
+	}
+
+	// Fallback: check allowAnsiAnimations and other characteristics
+	// Cat typically has allowAnsiAnimations=false, dancer has true
+	if p.Config.AllowAnsiAnimations == template.AllowAnsiAnimations {
+		// Additional check: compare some other settings
+		if p.Config.StoneThreshold == template.StoneThreshold &&
+			p.Config.InfirmEnabled == template.InfirmEnabled {
+			return true
+		}
+	}
+
+	return false
+}
+
+// mergeConfig merges template config with existing config, preserving user customizations
+func mergeConfig(existing, template pet.PetConfig) pet.PetConfig {
+	merged := template
+
+	// Preserve user-specific values that should never change
+	merged.Name = existing.Name
+	merged.CreatedAt = existing.CreatedAt
+	merged.Evolution = existing.Evolution
+	merged.MaxEvolution = existing.MaxEvolution
+	merged.EvolutionMode = existing.EvolutionMode
+
+	// Update animations from template (this is the main thing we want to update)
+	// This gets new animations like "asleep" that were added to templates
+	merged.Animations = template.Animations
+
+	// Preserve user's animation preferences
+	merged.AllowAnsiAnimations = existing.AllowAnsiAnimations
+
+	// Preserve user customizations for decay/behavior settings
+	// These are things users might have tuned for their pet
+	merged.DecayEnabled = existing.DecayEnabled
+	merged.DecayRate = existing.DecayRate
+	merged.HungerDecayPerHour = existing.HungerDecayPerHour
+	merged.HappinessDecayPerHour = existing.HappinessDecayPerHour
+	merged.EnergyDecayPerHour = existing.EnergyDecayPerHour
+
+	// Preserve threshold and multiplier settings
+	merged.StoneThreshold = existing.StoneThreshold
+	merged.InfirmEnabled = existing.InfirmEnabled
+	merged.InfirmDecayMultiplier = existing.InfirmDecayMultiplier
+	merged.StoneDecayMultiplier = existing.StoneDecayMultiplier
+
+	// Preserve sleep duration if user customized it
+	if existing.SleepDuration != 0 {
+		merged.SleepDuration = existing.SleepDuration
+	}
+
+	// Preserve other user settings
+	merged.EventChance = existing.EventChance
+	merged.HealthComputation = existing.HealthComputation
+	merged.InteractionThreshold = existing.InteractionThreshold
+	merged.CacheTTL = existing.CacheTTL
+
+	return merged
 }

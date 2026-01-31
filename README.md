@@ -18,7 +18,7 @@ If you're like me and using p10k theme for zsh:
 
 function prompt_familiar_health() {
   local val
-  val=$(familiar health 2>/dev/null)
+  val=$(familiar admin health 2>/dev/null)
   [[ -n $val ]] && p10k segment -f yellow -t "$val"
 }
 
@@ -47,8 +47,7 @@ Check what the familiar is trying to say:
 ~/code/sharedproject 💬
 familiar status
 
-Pip
-has-message
+Pip is has-message
 
  /\_/\ 
 ( o.o )
@@ -58,13 +57,12 @@ Message: Attn Devs — new local config defaults available.
 ~/code/sharedproject 💬
 familiar acknowledge
 
-```
-Pip
-happy
+Pip is happy
 
  /\_/\ 
 ( o.o )
- > ^ <*
+ > ^ <
+
 Pip feels acknowledged
 
 ~/code/sharedproject 🐾
@@ -77,7 +75,7 @@ Pip feels acknowledged
 - **Derived state system**: Health and conditions computed at runtime
 - **ASCII art rendering**: Beautiful terminal art for your familiar
 - **CLI-driven decay**: No background daemon - decay only happens when you interact
-- **Multiple states**: Happy, hungry, tired, sad, lonely, infirm, stone, and has-message
+- **Multiple states**: Happy, hungry, tired, sad, lonely, infirm, stone, asleep, and has-message
 
 ## Installation
 
@@ -173,10 +171,40 @@ This will show:
 
 The default familiar is an ASCII cat with different states:
 
-- **Default**: `/\_/\` `( o.o )` `> ^ <`
-- **Infirm**: `/\_/\` `( x.x )` `> ^ <`
-- **Stone**: `/\_/\` `( +.+ )` `> ^ <`
-- **Egg**: `___` `/  . . \` `\___/`
+- **Default**:
+  ```
+   /\_/\ 
+  ( o.o )
+   > ^ <
+  ```
+
+- **Infirm**:
+  ```
+   /\_/\ 
+  ( x.x )
+   > ^ <
+  ```
+
+- **Stone**:
+  ```
+   /\_/\ 
+  ( +.+ )
+   > ^ <
+  ```
+
+- **Asleep**:
+  ```
+   /\_/\ 
+  ( -.- ) zZz
+   > ^ <
+  ```
+
+- **Egg**:
+  ```
+    ______
+   /  . . \ 
+   \______/
+  ```
 
 ## Project Structure
 

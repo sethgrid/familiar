@@ -301,6 +301,87 @@ func TestSleepRestorationAfterExpiration(t *testing.T) {
 	}
 }
 
+func TestAsleepAnimationSelection(t *testing.T) {
+	// Test that when a pet is asleep, it shows the asleep animation, not happy or tired
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	err := storage.InitPet(false, "dancer", "SleepTestDancer", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
+	}
+
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Set pet to asleep state with good stats (so it might also be "happy")
+	p.State.IsAsleep = true
+	p.State.SleepUntil = time.Now().Add(30 * time.Minute)
+	p.State.Happiness = 80
+	p.State.Energy = 80
+	p.State.Hunger = 20
+	p.State.Evolution = 1
+
+	now := time.Now()
+	healthVal := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status := conditions.DeriveStatus(p, now, healthVal)
+
+	// Verify asleep condition is set
+	if !status.Conditions[conditions.CondAsleep] {
+		t.Error("Expected asleep condition to be set")
+	}
+
+	// Verify primary condition is asleep (not happy)
+	if status.Primary != conditions.CondAsleep {
+		t.Errorf("Expected primary condition to be asleep, got %s", status.Primary)
+	}
+
+	// Test animation key selection
+	key := art.ChooseAnimationKey(status.Conditions, p.State.Evolution, p.Config.Animations)
+	t.Logf("Animation key selected: '%s'", key)
+	t.Logf("Conditions: %v", status.Conditions)
+	if key != "asleep" {
+		t.Errorf("Expected animation key 'asleep', got '%s'", key)
+	}
+
+	// Verify asleep animation exists
+	asleepAnim, exists := p.Config.Animations["asleep"]
+	if !exists {
+		t.Error("Expected asleep animation to exist in dancer config")
+		t.Logf("Available animations: %v", getAnimationKeys(p.Config.Animations))
+	} else {
+		t.Logf("Asleep animation found with %d frames", len(asleepAnim.Frames))
+		if len(asleepAnim.Frames) > 0 {
+			t.Logf("First frame: %q", asleepAnim.Frames[0].Art)
+		}
+	}
+
+	// Test that GetStaticArt returns asleep art
+	// Note: GetStaticArt may return empty string if animation is played (for animated terminals)
+	// In that case, we just verify the key selection is correct
+	artStr := art.GetStaticArt(p, status)
+	t.Logf("GetStaticArt returned (length %d): %q", len(artStr), artStr)
+	
+	// If art is empty, it means animation was played (which is fine for terminals)
+	// For non-terminals or when animations disabled, it should return the first frame
+	if artStr == "" {
+		t.Log("Art is empty - animation was likely played (this is expected for animated terminals)")
+		// Verify the key selection was correct
+		if key != "asleep" {
+			t.Errorf("Even though art is empty, key should be 'asleep', got '%s'", key)
+		}
+	} else {
+		// Verify it's the asleep animation (should contain "zZz" or sleeping indicator)
+		if !strings.Contains(artStr, "zZz") {
+			t.Errorf("Expected asleep art to contain 'zZz', got:\n%s", artStr)
+		}
+	}
+}
+
 func TestPetDiscovery(t *testing.T) {
 	tmpDir := t.TempDir()
 	subDir := filepath.Join(tmpDir, "project", "subdir")
@@ -538,6 +619,14 @@ func TestNewPetShowsAsEgg(t *testing.T) {
 	if status.Conditions[conditions.CondHasMessage] {
 		t.Error("New pet should not have message")
 	}
+}
+
+func getAnimationKeys(anims map[string]pet.AnimationConfig) []string {
+	keys := make([]string, 0, len(anims))
+	for k := range anims {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func min(a, b int) int {

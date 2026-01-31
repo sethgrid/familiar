@@ -116,6 +116,11 @@ func SavePetState(p *pet.Pet, statePath string) error {
 	return nil
 }
 
+// FindLibDir attempts to find the lib directory relative to the executable or source
+func FindLibDir() (string, error) {
+	return findLibDir()
+}
+
 // findLibDir attempts to find the lib directory relative to the executable or source
 func findLibDir() (string, error) {
 	// Try to find lib relative to executable
