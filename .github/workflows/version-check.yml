@@ -1,0 +1,81 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for comparison
+
+    - name: Get base version
+      id: base_version
+      run: |
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+        else
+          # For push events, compare against previous commit
+          BASE_REF="HEAD~1"
+        fi
+        BASE_VERSION=$(git show ${BASE_REF}:cmd/familiar/main.go 2>/dev/null | grep -oP 'const Version = "\K[^"]+' || echo "")
+        echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+        echo "Base version: ${BASE_VERSION}"
+
+    - name: Get current version
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(grep -oP 'const Version = "\K[^"]+' cmd/familiar/main.go)
+        echo "current_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+        echo "Current version: ${CURRENT_VERSION}"
+
+    - name: Check for modified non-test Go files
+      id: check_files
+      run: |
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+        else
+          BASE_REF="HEAD~1"
+        fi
+        
+        # Get list of modified .go files excluding test files
+        MODIFIED_FILES=$(git diff --name-only --diff-filter=ACMR ${BASE_REF}...HEAD | grep '\.go$' | grep -v '_test\.go$' || true)
+        
+        if [ -z "$MODIFIED_FILES" ]; then
+          echo "No non-test Go files modified"
+          echo "has_go_changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "Modified non-test Go files:"
+          echo "$MODIFIED_FILES"
+          echo "has_go_changes=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Verify version bump
+      run: |
+        if [ "${{ steps.check_files.outputs.has_go_changes }}" == "true" ]; then
+          BASE_VERSION="${{ steps.base_version.outputs.base_version }}"
+          CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
+          
+          if [ -z "$BASE_VERSION" ]; then
+            echo "⚠️  Could not determine base version. Skipping version check."
+            exit 0
+          fi
+          
+          if [ "$BASE_VERSION" == "$CURRENT_VERSION" ]; then
+            echo "❌ Version has not been bumped!"
+            echo "   Base version:    $BASE_VERSION"
+            echo "   Current version: $CURRENT_VERSION"
+            echo ""
+            echo "Please bump the version in cmd/familiar/main.go before merging."
+            exit 1
+          else
+            echo "✅ Version has been bumped from $BASE_VERSION to $CURRENT_VERSION"
+          fi
+        else
+          echo "ℹ️  No non-test Go files were modified. Skipping version check."
+        fi

@@ -22,7 +22,7 @@ var (
 	configPath string
 )
 
-const Version = "v0.3.0"
+const Version = "v0.2.0"
 
 var familiarNames = []string{
 	"Pip",
