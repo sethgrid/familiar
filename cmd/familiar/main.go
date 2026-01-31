@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ var (
 	configPath string
 )
 
-const Version = "v0.3.0"
+const Version = "v0.4.0"
 
 var familiarNames = []string{
 	"Pip",
@@ -263,7 +264,8 @@ var statusCmd = &cobra.Command{
 
 		if verbose {
 			// Verbose mode: stats card
-			fmt.Printf("%s\n\n", name)
+			primaryCondition := status.Primary
+			fmt.Printf("%s is %s\n\n", name, primaryCondition)
 			fmt.Printf("state: %s\n", conditions.FormatConditions(status.AllOrdered))
 			fmt.Printf("health: %d\n", status.Health)
 			fmt.Printf("hunger: %d\n", p.State.Hunger)
@@ -671,6 +673,11 @@ If pet-type is not specified, it will be auto-detected from your current pet.
 		// Merge: preserve user values, update from template
 		mergedConfig := mergeConfig(p.Config, templateConfig)
 
+		// Ensure petType is set (replace placeholder or use detected type)
+		if mergedConfig.PetType == "" || mergedConfig.PetType == "{{PET_TYPE}}" {
+			mergedConfig.PetType = petType
+		}
+
 		// Save merged config
 		configData, err := toml.Marshal(mergedConfig)
 		if err != nil {
@@ -691,10 +698,206 @@ If pet-type is not specified, it will be auto-detected from your current pet.
 	},
 }
 
+var adminArtCmd = &cobra.Command{
+	Use:   "art [state|list]",
+	Short: "Show art for a specific state or list available states",
+	Long: `Show art for a specific state.
+
+Examples:
+  familiar admin art lonely                    # Show the lonely animation (current evolution)
+  familiar admin art happy                     # Show the happy animation (current evolution)
+  familiar admin art --evolution 2 happy       # Show evolution 2 happy animation
+  familiar admin art --type cat happy          # Show cat template's happy animation
+  familiar admin art --type pixel --evolution 2 happy  # Show pixel evolution 2 happy
+  familiar admin art list                      # List all available animation states
+
+Available states depend on your pet's configuration. Common states include:
+  default, egg, lonely, hungry, tired, sad, happy, stone, infirm, asleep, has-message
+
+Evolution 0 always shows egg art. Evolution 1 is the default for most pets.
+Use --evolution flag to preview art at different evolution levels.
+Use --type flag to view animations from a template type (cat, dancer, pixel) without needing that type installed.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		state := args[0]
+		evolutionOverride, _ := cmd.Flags().GetInt("evolution")
+		typeOverride, _ := cmd.Flags().GetString("type")
+
+		var p *pet.Pet
+		var err error
+
+		// If --type is specified, load from template instead of installed pet
+		if typeOverride != "" {
+			p, err = storage.LoadTemplateConfig(typeOverride)
+			if err != nil {
+				return fmt.Errorf("failed to load template '%s': %w", typeOverride, err)
+			}
+			// For templates, default to evolution 1 if not specified
+			if evolutionOverride < 0 {
+				evolutionOverride = 1
+			}
+		} else {
+			// Load installed pet
+			p, _, _, err = loadPet()
+			if err != nil {
+				return err
+			}
+		}
+
+		// Handle "list" command
+		if state == "list" {
+			if p.Config.Animations == nil || len(p.Config.Animations) == 0 {
+				fmt.Println("No animations available")
+				return nil
+			}
+
+			// Collect and sort animation keys
+			keys := make([]string, 0, len(p.Config.Animations))
+			for k := range p.Config.Animations {
+				keys = append(keys, k)
+			}
+
+			// Sort keys for consistent output
+			sort.Strings(keys)
+
+			fmt.Println("Available animation states:")
+			for _, key := range keys {
+				anim := p.Config.Animations[key]
+				frameCount := len(anim.Frames)
+				source := anim.Source
+				if source == "" {
+					source = "inline"
+				}
+				fmt.Printf("  %s (%s, %d frame(s))\n", key, source, frameCount)
+			}
+			return nil
+		}
+
+		// Determine which evolution to use
+		evolution := 1 // Default for templates
+		if typeOverride == "" {
+			// For installed pets, use their current evolution
+			evolution = p.State.Evolution
+		}
+		if evolutionOverride >= 0 {
+			evolution = evolutionOverride
+		}
+
+		// Evolution 0 always shows egg (unless it's a special state like stone egg)
+		if evolution == 0 {
+			// For egg, check if there's a state-specific egg (like stone+egg)
+			// But for simplicity, just show egg art
+			if state == "egg" || state == "default" {
+				anim, exists := p.Config.Animations["egg"]
+				if exists && len(anim.Frames) > 0 {
+					return displayArt(anim)
+				}
+			}
+			// For other states at evolution 0, still show egg
+			anim, exists := p.Config.Animations["egg"]
+			if exists && len(anim.Frames) > 0 {
+				return displayArt(anim)
+			}
+			return fmt.Errorf("egg animation not found")
+		}
+
+		// For evolution > 0, use ChooseAnimationKey to find the right animation
+		// Create a fake status with the requested condition
+		conds := make(map[conditions.Condition]bool)
+
+		// Map state string to condition
+		switch state {
+		case "has-message":
+			conds[conditions.CondHasMessage] = true
+		case "stone":
+			conds[conditions.CondStone] = true
+		case "asleep":
+			conds[conditions.CondAsleep] = true
+		case "infirm":
+			conds[conditions.CondInfirm] = true
+		case "lonely":
+			conds[conditions.CondLonely] = true
+		case "hungry":
+			conds[conditions.CondHungry] = true
+		case "tired":
+			conds[conditions.CondTired] = true
+		case "sad":
+			conds[conditions.CondSad] = true
+		case "happy":
+			conds[conditions.CondHappy] = true
+		case "default":
+			// No conditions - will use default
+		default:
+			// Try to find animation directly by state name first
+			anim, exists := p.Config.Animations[state]
+			if exists && len(anim.Frames) > 0 {
+				return displayArt(anim)
+			}
+			return fmt.Errorf("unknown state '%s'. Use 'familiar admin art list' to see available states", state)
+		}
+
+		// Use ChooseAnimationKey to find the right animation key for this evolution
+		key := art.ChooseAnimationKey(conds, evolution, p.Config.Animations)
+
+		// Try to get the animation
+		anim, exists := p.Config.Animations[key]
+		if !exists {
+			// Fallback: try the state name directly
+			anim, exists = p.Config.Animations[state]
+			if !exists {
+				return fmt.Errorf("animation for state '%s' at evolution %d not found. Use 'familiar admin art list' to see available states", state, evolution)
+			}
+		}
+
+		if len(anim.Frames) == 0 {
+			return fmt.Errorf("animation state '%s' has no frames", state)
+		}
+
+		return displayArt(anim)
+	},
+}
+
+func displayArt(anim pet.AnimationConfig) error {
+	// If animation has multiple frames, play the animation
+	// Otherwise just show the first frame
+	if len(anim.Frames) > 1 {
+		// Play animation
+		if anim.Source == "pixel" {
+			art.PlayPixelAnimation(anim)
+		} else {
+			art.PlayAnimation(anim)
+		}
+		return nil
+	}
+
+	// Single frame - just display it
+	if len(anim.Frames) > 0 {
+		if anim.Source == "pixel" {
+			// Render pixel art
+			rendered := art.RenderPixelArt(anim.Frames[0])
+			fmt.Print(rendered)
+			if !strings.HasSuffix(rendered, "\n") {
+				fmt.Println()
+			}
+		} else {
+			// Display inline ASCII art
+			artStr := anim.Frames[0].Art
+			fmt.Print(artStr)
+			if !strings.HasSuffix(artStr, "\n") {
+				fmt.Println()
+			}
+		}
+	}
+	return nil
+}
+
 func init() {
 	adminCmd.AddCommand(adminHealthCmd)
 	adminCmd.AddCommand(adminCompletionCmd)
 	adminCmd.AddCommand(adminUpdateCmd)
+	adminArtCmd.Flags().IntP("evolution", "e", -1, "Evolution level to preview (default: current evolution for installed pet, 1 for templates)")
+	adminArtCmd.Flags().StringP("type", "t", "", "Pet type template to use (cat, dancer, pixel) - ignores installed familiar")
+	adminCmd.AddCommand(adminArtCmd)
 }
 
 var messageCmd = &cobra.Command{
@@ -951,13 +1154,34 @@ func max(a, b int) int {
 
 // detectPetType tries to determine the pet type by comparing animations with known templates
 func detectPetType(p *pet.Pet) (string, error) {
+	// First, check if petType is explicitly set in config (ignore placeholder values)
+	if p.Config.PetType != "" && p.Config.PetType != "{{PET_TYPE}}" {
+		return p.Config.PetType, nil
+	}
+
+	// Quick heuristic: check animation source type
+	if p.Config.Animations != nil {
+		if defaultAnim, hasDefault := p.Config.Animations["default"]; hasDefault {
+			if defaultAnim.Source == "pixel" {
+				// Try pixel first if it's pixel art
+				libDir, err := storage.FindLibDir()
+				if err == nil {
+					templatePath := filepath.Join(libDir, "pixel.toml")
+					if _, err := os.Stat(templatePath); err == nil {
+						return "pixel", nil
+					}
+				}
+			}
+		}
+	}
+
 	libDir, err := storage.FindLibDir()
 	if err != nil {
 		return "", err
 	}
 
 	// Check known pet types
-	knownTypes := []string{"cat", "dancer"}
+	knownTypes := []string{"cat", "dancer", "pixel"}
 
 	for _, petType := range knownTypes {
 		templatePath := filepath.Join(libDir, petType+".toml")
@@ -998,20 +1222,45 @@ func matchesPetType(p *pet.Pet, template *pet.PetConfig) bool {
 		templateDefault, templateHasDefault := template.Animations["default"]
 
 		if petHasDefault && templateHasDefault {
-			// Compare first frame of default animation
-			if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
-				petArt := petDefault.Frames[0].Art
-				templateArt := templateDefault.Frames[0].Art
-				// Simple comparison - if art matches, likely same type
-				if petArt == templateArt {
-					return true
+			// Check animation source type first - this is a strong indicator
+			if petDefault.Source == "pixel" && templateDefault.Source == "pixel" {
+				// Both are pixel art - check if they have pixels
+				if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
+					petFrame := petDefault.Frames[0]
+					templateFrame := templateDefault.Frames[0]
+					if len(petFrame.Pixels) > 0 && len(templateFrame.Pixels) > 0 {
+						// Both have pixel art - likely same type
+						// Check dimensions are similar (within reasonable range)
+						petHeight := len(petFrame.Pixels)
+						templateHeight := len(templateFrame.Pixels)
+						if petHeight > 0 && templateHeight > 0 {
+							petWidth := len(petFrame.Pixels[0])
+							templateWidth := len(templateFrame.Pixels[0])
+							// Allow some variance in dimensions (within 2 pixels)
+							heightDiff := petHeight - templateHeight
+							widthDiff := petWidth - templateWidth
+							if heightDiff >= -2 && heightDiff <= 2 && widthDiff >= -2 && widthDiff <= 2 {
+								return true
+							}
+						}
+					}
+				}
+			} else if petDefault.Source == "inline" && templateDefault.Source == "inline" {
+				// For inline art, compare ASCII art
+				if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
+					petArt := petDefault.Frames[0].Art
+					templateArt := templateDefault.Frames[0].Art
+					// Simple comparison - if art matches, likely same type
+					if petArt == templateArt {
+						return true
+					}
 				}
 			}
 		}
 	}
 
 	// Fallback: check allowAnsiAnimations and other characteristics
-	// Cat typically has allowAnsiAnimations=false, dancer has true
+	// Cat typically has allowAnsiAnimations=false, dancer has true, pixel has true
 	if p.Config.AllowAnsiAnimations == template.AllowAnsiAnimations {
 		// Additional check: compare some other settings
 		if p.Config.StoneThreshold == template.StoneThreshold &&
@@ -1029,6 +1278,10 @@ func mergeConfig(existing, template pet.PetConfig) pet.PetConfig {
 
 	// Preserve user-specific values that should never change
 	merged.Name = existing.Name
+	merged.PetType = existing.PetType // Preserve existing petType, or use template's if not set
+	if merged.PetType == "" {
+		merged.PetType = template.PetType
+	}
 	merged.CreatedAt = existing.CreatedAt
 	merged.Evolution = existing.Evolution
 	merged.MaxEvolution = existing.MaxEvolution

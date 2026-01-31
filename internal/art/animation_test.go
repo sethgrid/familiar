@@ -27,7 +27,7 @@ func TestAnimationStaysInPlace(t *testing.T) {
 	os.Stdout = w
 
 	// Run animation
-	playAnimation(anim)
+	PlayAnimation(anim)
 
 	// Close write end and restore stdout
 	w.Close()

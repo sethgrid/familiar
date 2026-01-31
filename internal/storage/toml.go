@@ -200,6 +200,7 @@ func InitPet(global bool, petType string, name string, baseDir string) error {
 	configContent := string(configTemplate)
 	configContent = strings.ReplaceAll(configContent, "{{NAME}}", name)
 	configContent = strings.ReplaceAll(configContent, "{{CREATED_AT}}", createdAtStr)
+	configContent = strings.ReplaceAll(configContent, "{{PET_TYPE}}", petType)
 
 	// Replace placeholders in state template
 	stateContent := string(stateTemplate)
@@ -218,6 +219,84 @@ func InitPet(global bool, petType string, name string, baseDir string) error {
 	}
 
 	return nil
+}
+
+// LoadTemplateConfig loads a pet config from a template file
+// This is used for previewing animations without needing an installed pet
+func LoadTemplateConfig(petType string) (*pet.Pet, error) {
+	// Find lib directory
+	libDir, err := findLibDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find lib directory: %w", err)
+	}
+
+	// Load template
+	templatePath := filepath.Join(libDir, petType+".toml")
+	templateData, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template file %s: %w", templatePath, err)
+	}
+
+	// Replace placeholders with valid dummy values for parsing
+	templateContent := string(templateData)
+	now := time.Now()
+	dummyName := "TemplatePet"
+	dummyCreatedAt := now.Format(time.RFC3339Nano)
+
+	templateContent = strings.ReplaceAll(templateContent, "{{NAME}}", dummyName)
+	templateContent = strings.ReplaceAll(templateContent, "{{CREATED_AT}}", dummyCreatedAt)
+	templateContent = strings.ReplaceAll(templateContent, "{{PET_TYPE}}", petType)
+
+	// Parse template - handle duration strings like LoadPet does
+	var templateConfig pet.PetConfig
+
+	// Try to unmarshal directly first
+	if err := toml.Unmarshal([]byte(templateContent), &templateConfig); err != nil {
+		// If it fails, try parsing as map to handle duration strings
+		var configMap map[string]interface{}
+		if err2 := toml.Unmarshal([]byte(templateContent), &configMap); err2 != nil {
+			return nil, fmt.Errorf("failed to parse template: %w", err)
+		}
+
+		// Parse sleepDuration if it's a string
+		if sleepDur, ok := configMap["sleepDuration"]; ok {
+			if sleepDurStr, ok := sleepDur.(string); ok {
+				parsed, err := time.ParseDuration(sleepDurStr)
+				if err == nil {
+					configMap["sleepDuration"] = int64(parsed)
+				}
+			}
+		}
+
+		// Re-marshal and unmarshal to get proper struct
+		configBytes, err := toml.Marshal(configMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to re-marshal template: %w", err)
+		}
+
+		if err := toml.Unmarshal(configBytes, &templateConfig); err != nil {
+			return nil, fmt.Errorf("failed to parse template: %w", err)
+		}
+	} else {
+		// Successfully unmarshaled, but check if sleepDuration needs parsing
+		var configMap map[string]interface{}
+		if err := toml.Unmarshal([]byte(templateContent), &configMap); err == nil {
+			if sleepDur, ok := configMap["sleepDuration"]; ok {
+				if sleepDurStr, ok := sleepDur.(string); ok {
+					parsed, err := time.ParseDuration(sleepDurStr)
+					if err == nil {
+						templateConfig.SleepDuration = parsed
+					}
+				}
+			}
+		}
+	}
+
+	// Create a minimal pet with just the config (no state needed for art preview)
+	return &pet.Pet{
+		Config: templateConfig,
+		State:  pet.PetState{}, // Empty state - we only need config for animations
+	}, nil
 }
 
 // ReleasePet soft-deletes a pet by renaming files with .released.{timestamp}
