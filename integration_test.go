@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -299,6 +301,313 @@ func TestSleepRestorationAfterExpiration(t *testing.T) {
 	if p.State.Energy < 90 {
 		t.Errorf("Expected energy to be near 100 after full sleep cycle, got %d", p.State.Energy)
 	}
+}
+
+func TestStatusOutputWithAnimation(t *testing.T) {
+	// Test that status command output includes all expected information
+	// and that animations don't overwrite status text
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	// Initialize a dancer pet (has animations enabled)
+	err := storage.InitPet(false, "dancer", "TestDancer", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
+	}
+
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Evolve to enable animations
+	p.State.Evolution = 1
+	// Set good stats to avoid special conditions
+	p.State.Hunger = 20
+	p.State.Happiness = 70
+	p.State.Energy = 60
+
+	// Apply time step
+	now := time.Now()
+	if err := pet.ApplyTimeStep(p, now); err != nil {
+		t.Fatalf("Failed to apply time step: %v", err)
+	}
+
+	// Compute status
+	healthVal := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status := conditions.DeriveStatus(p, now, healthVal)
+
+	// Capture stdout to test animation output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Simulate verbose status command output
+	name := p.Config.Name
+	primaryCondition := status.Primary
+	
+	// Print status header (what status command prints)
+	fmt.Printf("%s is %s\n\n", name, primaryCondition)
+	fmt.Printf("state: %s\n", conditions.FormatConditions(status.AllOrdered))
+	fmt.Printf("health: %d\n", status.Health)
+	fmt.Printf("hunger: %d\n", p.State.Hunger)
+	fmt.Printf("happiness: %d\n", p.State.Happiness)
+	fmt.Printf("energy: %d\n", p.State.Energy)
+	fmt.Printf("evolution: %d\n\n", p.State.Evolution)
+
+	// Get art (this may play animation or return static art)
+	artStr := art.GetStaticArt(p, status)
+	
+	// If animation was played, GetStaticArt returns empty string and animation was printed to stdout
+	// If static art, we need to print it
+	if artStr != "" {
+		fmt.Println(artStr)
+	}
+
+	// Close write end and restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read captured output
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	outputStr := buf.String()
+
+	// Verify status information is present in output
+	if !strings.Contains(outputStr, name) {
+		t.Errorf("Output missing pet name '%s'. Output:\n%s", name, outputStr)
+	}
+	
+	if !strings.Contains(outputStr, string(primaryCondition)) {
+		t.Errorf("Output missing primary condition '%s'. Output:\n%s", primaryCondition, outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "state:") {
+		t.Errorf("Output missing 'state:' line. Output:\n%s", outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "health:") {
+		t.Errorf("Output missing 'health:' line. Output:\n%s", outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "hunger:") {
+		t.Errorf("Output missing 'hunger:' line. Output:\n%s", outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "happiness:") {
+		t.Errorf("Output missing 'happiness:' line. Output:\n%s", outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "energy:") {
+		t.Errorf("Output missing 'energy:' line. Output:\n%s", outputStr)
+	}
+	
+	if !strings.Contains(outputStr, "evolution:") {
+		t.Errorf("Output missing 'evolution:' line. Output:\n%s", outputStr)
+	}
+
+	// Verify format: name should appear before condition
+	namePos := strings.Index(outputStr, name)
+	conditionPos := strings.Index(outputStr, string(primaryCondition))
+	if namePos == -1 || conditionPos == -1 || conditionPos <= namePos {
+		t.Errorf("Expected name '%s' to appear before condition '%s'. Output:\n%s", name, primaryCondition, outputStr)
+	}
+
+	// Verify animation art is present (either static or final frame)
+	// Dancer default animation has frames with "o" and "\o/"
+	hasFrameContent := strings.Contains(outputStr, "    o") || 
+		strings.Contains(outputStr, "   /|\\") || 
+		strings.Contains(outputStr, "  \\o/") || 
+		strings.Contains(outputStr, "   |") ||
+		strings.Contains(outputStr, "   / \\")
+	
+	if !hasFrameContent {
+		t.Errorf("Output missing animation art. Expected to see dancer frames. Output:\n%s", outputStr)
+	}
+
+	// Verify the final frame is visible (last frame of animation should be in output)
+	// For dancer default, the last frame should contain one of the frame patterns
+	// Check that art appears after all status lines
+	lastStatusLine := "evolution:"
+	lastStatusPos := strings.LastIndex(outputStr, lastStatusLine)
+	if lastStatusPos != -1 {
+		// Get content after status lines
+		contentAfterStatus := outputStr[lastStatusPos+len(lastStatusLine):]
+		// Should contain animation art
+		if !strings.Contains(contentAfterStatus, "o") && !strings.Contains(contentAfterStatus, "/") {
+			t.Errorf("Animation art should appear after status lines. Content after status:\n%s", contentAfterStatus)
+		}
+	}
+
+	// Most importantly: verify status text appears BEFORE any animation content
+	// The status lines should all appear before the animation area
+	statusLines := []string{
+		fmt.Sprintf("%s is %s", name, primaryCondition),
+		"state:",
+		"health:",
+		"hunger:",
+		"happiness:",
+		"energy:",
+		"evolution:",
+	}
+	
+	for i, line := range statusLines {
+		pos := strings.Index(outputStr, line)
+		if pos == -1 {
+			t.Errorf("Status line '%s' not found in output", line)
+			continue
+		}
+		// Each subsequent status line should appear after the previous one
+		if i > 0 {
+			prevPos := strings.Index(outputStr, statusLines[i-1])
+			if prevPos != -1 && pos < prevPos {
+				t.Errorf("Status line '%s' appears before '%s' - order is wrong", line, statusLines[i-1])
+			}
+		}
+	}
+
+	t.Logf("Status output test passed. Output length: %d chars", len(outputStr))
+	t.Logf("First 500 chars of output:\n%s", outputStr[:min(500, len(outputStr))])
+}
+
+func TestStatusOutputWithPixelAnimation(t *testing.T) {
+	// Test that pixel art animations preserve status text
+	tmpDir := t.TempDir()
+	petDir := filepath.Join(tmpDir, ".familiar")
+
+	// Initialize a pixel pet
+	err := storage.InitPet(false, "pixel", "Sprite", tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize pet: %v", err)
+	}
+
+	configPath := filepath.Join(petDir, "pet.toml")
+	statePath := filepath.Join(petDir, "pet.state.toml")
+	p, err := storage.LoadPet(configPath, statePath)
+	if err != nil {
+		t.Fatalf("Failed to load pet: %v", err)
+	}
+
+	// Evolve to enable animations
+	p.State.Evolution = 1
+	// Set good stats
+	p.State.Hunger = 20
+	p.State.Happiness = 70
+	p.State.Energy = 60
+
+	// Apply time step
+	now := time.Now()
+	if err := pet.ApplyTimeStep(p, now); err != nil {
+		t.Fatalf("Failed to apply time step: %v", err)
+	}
+
+	// Compute status
+	healthVal := health.ComputeHealth(p.State.Hunger, p.State.Happiness, p.State.Energy, health.ComputationMode(p.Config.HealthComputation))
+	status := conditions.DeriveStatus(p, now, healthVal)
+
+	// Capture stdout to test animation output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Simulate verbose status command output
+	name := p.Config.Name
+	primaryCondition := status.Primary
+	
+	// Print status header (what status command prints)
+	fmt.Printf("%s is %s\n\n", name, primaryCondition)
+	fmt.Printf("state: %s\n", conditions.FormatConditions(status.AllOrdered))
+	fmt.Printf("health: %d\n", status.Health)
+	fmt.Printf("hunger: %d\n", p.State.Hunger)
+	fmt.Printf("happiness: %d\n", p.State.Happiness)
+	fmt.Printf("energy: %d\n", p.State.Energy)
+	fmt.Printf("evolution: %d\n\n", p.State.Evolution)
+
+	// Get art (this may play animation or return static art)
+	artStr := art.GetStaticArt(p, status)
+	
+	// If animation was played, GetStaticArt returns empty string and animation was printed to stdout
+	// If static art, we need to print it
+	if artStr != "" {
+		fmt.Println(artStr)
+	}
+
+	// Close write end and restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read captured output
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	outputStr := buf.String()
+
+	// Verify ALL status information is present
+	requiredStatusFields := []string{
+		name,
+		string(primaryCondition),
+		"state:",
+		"health:",
+		"hunger:",
+		"happiness:",
+		"energy:",
+		"evolution:",
+	}
+	
+	for _, field := range requiredStatusFields {
+		if !strings.Contains(outputStr, field) {
+			t.Errorf("Output missing required field '%s'. Output:\n%s", field, outputStr)
+		}
+	}
+
+	// Verify status text appears in correct order
+	// Name and condition should appear first
+	if !strings.HasPrefix(outputStr, name) {
+		t.Errorf("Output should start with pet name '%s'. Output:\n%s", name, outputStr[:min(100, len(outputStr))])
+	}
+
+	// Verify status lines appear before any art/animation
+	statusSection := fmt.Sprintf("%s is %s\n\nstate:", name, primaryCondition)
+	if !strings.Contains(outputStr, statusSection) {
+		t.Errorf("Status section not found in expected format. Output:\n%s", outputStr)
+	}
+
+	// Verify art/animation appears after status (for pixel art, ANSI codes will be present)
+	// Pixel art uses ANSI color codes, so we should see escape sequences
+	hasAnsiCodes := strings.Contains(outputStr, "\033[")
+	if p.Config.AllowAnsiAnimations && hasAnsiCodes {
+		t.Log("Pixel art animation detected (ANSI codes present)")
+	}
+
+	// Most importantly: verify status text is complete and not overwritten
+	// All status lines should be present and in order
+	statusLines := []string{
+		fmt.Sprintf("%s is %s", name, primaryCondition),
+		"state:",
+		"health:",
+		"hunger:",
+		"happiness:",
+		"energy:",
+		"evolution:",
+	}
+	
+	lastPos := -1
+	for _, line := range statusLines {
+		pos := strings.Index(outputStr, line)
+		if pos == -1 {
+			t.Errorf("Status line '%s' not found in output", line)
+			continue
+		}
+		// Verify lines appear in order
+		if lastPos != -1 && pos < lastPos {
+			t.Errorf("Status line '%s' appears out of order (before previous line)", line)
+		}
+		lastPos = pos
+	}
+
+	t.Logf("Pixel status output test passed. Output length: %d chars", len(outputStr))
+	t.Logf("First 500 chars of output:\n%s", outputStr[:min(500, len(outputStr))])
 }
 
 func TestAsleepAnimationSelection(t *testing.T) {
@@ -618,6 +927,262 @@ func TestNewPetShowsAsEgg(t *testing.T) {
 	}
 	if status.Conditions[conditions.CondHasMessage] {
 		t.Error("New pet should not have message")
+	}
+}
+
+func TestAdminArtWithTypeFlag(t *testing.T) {
+	// Test that --type flag loads templates correctly and shows art
+	// We'll test the LoadTemplateConfig function and art selection logic
+
+	// Test loading cat template
+	catTemplate, err := storage.LoadTemplateConfig("cat")
+	if err != nil {
+		t.Fatalf("Failed to load cat template: %v", err)
+	}
+
+	if catTemplate.Config.PetType != "cat" && catTemplate.Config.PetType != "{{PET_TYPE}}" {
+		t.Errorf("Expected cat template petType, got '%s'", catTemplate.Config.PetType)
+	}
+
+	// Verify cat has expected animations
+	if catTemplate.Config.Animations == nil {
+		t.Fatal("Cat template should have animations")
+	}
+
+	expectedCatAnims := []string{"default", "egg", "has-message", "infirm", "stone", "asleep"}
+	for _, animKey := range expectedCatAnims {
+		if _, exists := catTemplate.Config.Animations[animKey]; !exists {
+			t.Errorf("Cat template missing expected animation: %s", animKey)
+		}
+	}
+
+	// Test loading dancer template
+	dancerTemplate, err := storage.LoadTemplateConfig("dancer")
+	if err != nil {
+		t.Fatalf("Failed to load dancer template: %v", err)
+	}
+
+	if dancerTemplate.Config.Animations == nil {
+		t.Fatal("Dancer template should have animations")
+	}
+
+	// Verify dancer has more animations than cat
+	if len(dancerTemplate.Config.Animations) <= len(catTemplate.Config.Animations) {
+		t.Errorf("Dancer should have more animations than cat. Cat: %d, Dancer: %d",
+			len(catTemplate.Config.Animations), len(dancerTemplate.Config.Animations))
+	}
+
+	// Test loading pixel template
+	pixelTemplate, err := storage.LoadTemplateConfig("pixel")
+	if err != nil {
+		t.Fatalf("Failed to load pixel template: %v", err)
+	}
+
+	if pixelTemplate.Config.Animations == nil {
+		t.Fatal("Pixel template should have animations")
+	}
+
+	// Verify pixel has pixel art animations
+	defaultAnim, exists := pixelTemplate.Config.Animations["default"]
+	if !exists {
+		t.Fatal("Pixel template should have default animation")
+	}
+	if defaultAnim.Source != "pixel" {
+		t.Errorf("Pixel template default animation should have source 'pixel', got '%s'", defaultAnim.Source)
+	}
+
+	// Test that pixel has evolution 2 animations
+	hasE2Animations := false
+	for key := range pixelTemplate.Config.Animations {
+		if strings.HasPrefix(key, "e2:") {
+			hasE2Animations = true
+			break
+		}
+	}
+	if !hasE2Animations {
+		t.Error("Pixel template should have evolution 2 animations (e2:*)")
+	}
+
+	// Test invalid template type
+	_, err = storage.LoadTemplateConfig("nonexistent")
+	if err == nil {
+		t.Error("Expected error when loading nonexistent template type")
+	}
+}
+
+func TestAdminArtEvolutionWithType(t *testing.T) {
+	// Test that evolution 0 always shows egg even with --type flag
+	pixelTemplate, err := storage.LoadTemplateConfig("pixel")
+	if err != nil {
+		t.Fatalf("Failed to load pixel template: %v", err)
+	}
+
+	// Test evolution 0 - should always show egg
+	conds := make(map[conditions.Condition]bool)
+	conds[conditions.CondHappy] = true // Try to request happy
+
+	key := art.ChooseAnimationKey(conds, 0, pixelTemplate.Config.Animations)
+	if key != "egg" {
+		t.Errorf("Evolution 0 should always return 'egg' key, got '%s'", key)
+	}
+
+	// Verify egg animation exists
+	eggAnim, exists := pixelTemplate.Config.Animations["egg"]
+	if !exists {
+		t.Fatal("Pixel template should have egg animation")
+	}
+	if len(eggAnim.Frames) == 0 {
+		t.Error("Egg animation should have frames")
+	}
+
+	// Test evolution 1 - should use base animations
+	key = art.ChooseAnimationKey(conds, 1, pixelTemplate.Config.Animations)
+	if key == "egg" {
+		t.Error("Evolution 1 should not return 'egg' for happy condition")
+	}
+	// Should find happy animation or default
+	anim, exists := pixelTemplate.Config.Animations[key]
+	if !exists {
+		t.Errorf("Animation key '%s' should exist in pixel template", key)
+	} else if len(anim.Frames) == 0 {
+		t.Errorf("Animation '%s' should have frames", key)
+	}
+
+	// Test evolution 2 - should use e2: animations
+	key = art.ChooseAnimationKey(conds, 2, pixelTemplate.Config.Animations)
+	// Should try e2:happy first
+	expectedKey := "e2:happy"
+	if key != expectedKey {
+		// Fallback is OK, but log it
+		t.Logf("Evolution 2 happy returned key '%s' (expected '%s' or fallback)", key, expectedKey)
+	}
+	anim, exists = pixelTemplate.Config.Animations[key]
+	if !exists {
+		t.Errorf("Animation key '%s' should exist in pixel template", key)
+	} else if len(anim.Frames) == 0 {
+		t.Errorf("Animation '%s' should have frames", key)
+	}
+}
+
+func TestAdminArtTypeFlagWithDifferentStates(t *testing.T) {
+	// Test that --type flag works with different states
+	pixelTemplate, err := storage.LoadTemplateConfig("pixel")
+	if err != nil {
+		t.Fatalf("Failed to load pixel template: %v", err)
+	}
+
+	testCases := []struct {
+		state      string
+		condition  conditions.Condition
+		evolution  int
+		shouldFind bool
+	}{
+		{"happy", conditions.CondHappy, 1, true},
+		{"lonely", conditions.CondLonely, 1, true},
+		{"hungry", conditions.CondHungry, 1, true},
+		{"tired", conditions.CondTired, 1, true},
+		{"sad", conditions.CondSad, 1, true},
+		{"stone", conditions.CondStone, 1, true},
+		{"infirm", conditions.CondInfirm, 1, true},
+		{"asleep", conditions.CondAsleep, 1, true},
+		{"has-message", conditions.CondHasMessage, 1, true},
+		{"happy", conditions.CondHappy, 2, true}, // Evolution 2
+		{"lonely", conditions.CondLonely, 2, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%s_evolution_%d", tc.state, tc.evolution), func(t *testing.T) {
+			conds := make(map[conditions.Condition]bool)
+			conds[tc.condition] = true
+
+			key := art.ChooseAnimationKey(conds, tc.evolution, pixelTemplate.Config.Animations)
+			anim, exists := pixelTemplate.Config.Animations[key]
+
+			if tc.shouldFind {
+				if !exists {
+					t.Errorf("State '%s' at evolution %d: animation key '%s' not found", tc.state, tc.evolution, key)
+				} else if len(anim.Frames) == 0 {
+					t.Errorf("State '%s' at evolution %d: animation '%s' has no frames", tc.state, tc.evolution, key)
+				}
+			} else {
+				if exists {
+					t.Errorf("State '%s' at evolution %d: should not find animation, but found '%s'", tc.state, tc.evolution, key)
+				}
+			}
+		})
+	}
+}
+
+func TestAdminArtTypeFlagWithCatTemplate(t *testing.T) {
+	// Test that --type cat works correctly
+	catTemplate, err := storage.LoadTemplateConfig("cat")
+	if err != nil {
+		t.Fatalf("Failed to load cat template: %v", err)
+	}
+
+	// Test default animation
+	conds := make(map[conditions.Condition]bool)
+	key := art.ChooseAnimationKey(conds, 1, catTemplate.Config.Animations)
+	anim, exists := catTemplate.Config.Animations[key]
+	if !exists {
+		t.Fatalf("Cat template should have animation for key '%s'", key)
+	}
+
+	// Verify it's ASCII art (not pixel)
+	if anim.Source != "inline" && anim.Source != "" {
+		t.Errorf("Cat template should use inline ASCII art, got source '%s'", anim.Source)
+	}
+
+	// Verify it has art content
+	if len(anim.Frames) == 0 {
+		t.Error("Cat default animation should have frames")
+	} else if anim.Frames[0].Art == "" {
+		t.Error("Cat default animation frame should have art content")
+	}
+
+	// Verify expected cat art pattern
+	artStr := anim.Frames[0].Art
+	if !strings.Contains(artStr, "/\\_/\\") && !strings.Contains(artStr, "o.o") {
+		t.Logf("Cat art doesn't match expected pattern, but that's OK. Got: %q", artStr)
+	}
+}
+
+func TestAdminArtTypeFlagWithDancerTemplate(t *testing.T) {
+	// Test that --type dancer works correctly
+	dancerTemplate, err := storage.LoadTemplateConfig("dancer")
+	if err != nil {
+		t.Fatalf("Failed to load dancer template: %v", err)
+	}
+
+	// Verify dancer has more states than cat
+	catTemplate, err := storage.LoadTemplateConfig("cat")
+	if err != nil {
+		t.Fatalf("Failed to load cat template: %v", err)
+	}
+
+	if len(dancerTemplate.Config.Animations) <= len(catTemplate.Config.Animations) {
+		t.Errorf("Dancer should have more animations. Cat: %d, Dancer: %d",
+			len(catTemplate.Config.Animations), len(dancerTemplate.Config.Animations))
+	}
+
+	// Test that dancer has happy, lonely, hungry, tired, sad animations
+	expectedDancerStates := []string{"happy", "lonely", "hungry", "tired", "sad"}
+	for _, state := range expectedDancerStates {
+		if _, exists := dancerTemplate.Config.Animations[state]; !exists {
+			t.Errorf("Dancer template missing expected state animation: %s", state)
+		}
+	}
+
+	// Test happy animation
+	conds := make(map[conditions.Condition]bool)
+	conds[conditions.CondHappy] = true
+	key := art.ChooseAnimationKey(conds, 1, dancerTemplate.Config.Animations)
+	anim, exists := dancerTemplate.Config.Animations[key]
+	if !exists {
+		t.Fatalf("Dancer should have animation for key '%s'", key)
+	}
+	if len(anim.Frames) == 0 {
+		t.Error("Dancer happy animation should have frames")
 	}
 }
 

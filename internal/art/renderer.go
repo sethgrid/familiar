@@ -17,6 +17,7 @@ func isTerminal() bool {
 	return (fileInfo.Mode() & os.ModeCharDevice) != 0
 }
 
+// ChooseAnimationKey selects the appropriate animation key based on conditions and evolution
 func ChooseAnimationKey(conds map[conditions.Condition]bool, evolution int, animations map[string]pet.AnimationConfig) string {
 	// If evolution is 0 and no special conditions, return "egg"
 	if evolution == 0 {
@@ -116,10 +117,10 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 		if anim.Source == "pixel" {
 			// For pixel art, render the first frame
 			if len(anim.Frames) > 0 {
-				rendered := renderPixelArt(anim.Frames[0])
+				rendered := RenderPixelArt(anim.Frames[0])
 				// If animation has multiple frames and animations are enabled, play animation
 				if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
-					playPixelAnimation(anim)
+					PlayPixelAnimation(anim)
 					// Return empty string - animation already displayed the final frame
 					return ""
 				}
@@ -128,7 +129,7 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 		} else {
 			// If animation has multiple frames and animations are enabled, play animation
 			if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
-				playAnimation(anim)
+				PlayAnimation(anim)
 				// Return empty string - animation already displayed the final frame
 				return ""
 			}
@@ -161,8 +162,8 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 	return getDefaultCat()
 }
 
-// playAnimation plays an animation by cycling through frames directly to stdout
-func playAnimation(anim pet.AnimationConfig) {
+// PlayAnimation plays an animation by cycling through frames directly to stdout
+func PlayAnimation(anim pet.AnimationConfig) {
 	if len(anim.Frames) == 0 || len(anim.Frames) == 1 {
 		return
 	}
@@ -201,6 +202,17 @@ func playAnimation(anim pet.AnimationConfig) {
 
 	// Hide cursor
 	fmt.Fprint(os.Stdout, "\033[?25l")
+
+	// Print buffer lines BELOW to ensure animation has room without scrolling
+	// This prevents the animation from overwriting status text when terminal is near bottom
+	bufferLines := maxLines + 10 // Extra buffer below animation
+	for j := 0; j < bufferLines; j++ {
+		fmt.Fprint(os.Stdout, "\n")
+	}
+	// Move back up to animation start position (we're now at the start of the buffer area)
+	if bufferLines > 0 {
+		fmt.Fprintf(os.Stdout, "\033[%dA", bufferLines)
+	}
 
 	for i := 0; i < totalFrames; i++ {
 		frameIdx := i % len(anim.Frames)
@@ -297,9 +309,43 @@ func getHasMessageCat() string {
  > ^ <*`
 }
 
-// renderPixelArt renders a pixel art frame to a string using ANSI color codes
+// isTransparentPixel checks if a pixel value represents a transparent pixel
+// Accepts: "", "transparent", all spaces, or all hash characters (for alignment)
+func isTransparentPixel(pixel string) bool {
+	if pixel == "" || pixel == "transparent" {
+		return true
+	}
+
+	// Check if all characters are spaces
+	allSpaces := true
+	for _, r := range pixel {
+		if r != ' ' {
+			allSpaces = false
+			break
+		}
+	}
+	if allSpaces {
+		return true
+	}
+
+	// Check if all characters are hashes (for alignment)
+	allHashes := true
+	for _, r := range pixel {
+		if r != '#' {
+			allHashes = false
+			break
+		}
+	}
+	if allHashes {
+		return true
+	}
+
+	return false
+}
+
+// RenderPixelArt renders a pixel art frame to a string using ANSI color codes
 // Uses half-block characters (▀ ▄) for 2 pixels per character cell
-func renderPixelArt(frame pet.Frame) string {
+func RenderPixelArt(frame pet.Frame) string {
 	if len(frame.Pixels) == 0 {
 		return ""
 	}
@@ -331,15 +377,19 @@ func renderPixelArt(frame pet.Frame) string {
 				bottomColor = row2[x]
 			}
 
+			// Normalize transparent pixels
+			topTransparent := isTransparentPixel(topColor)
+			bottomTransparent := isTransparentPixel(bottomColor)
+
 			// Render using half-block character
-			if topColor == "" && bottomColor == "" {
+			if topTransparent && bottomTransparent {
 				// Both transparent - use space
 				result.WriteString(" ")
-			} else if topColor == "" || topColor == "transparent" {
+			} else if topTransparent {
 				// Only bottom - use lower half block
 				r, g, b := hexToRGB(bottomColor)
 				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▄\033[0m", r, g, b))
-			} else if bottomColor == "" || bottomColor == "transparent" {
+			} else if bottomTransparent {
 				// Only top - use upper half block
 				r, g, b := hexToRGB(topColor)
 				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▀\033[0m", r, g, b))
@@ -365,8 +415,8 @@ func renderPixelArt(frame pet.Frame) string {
 	return result.String()
 }
 
-// playPixelAnimation plays a pixel art animation
-func playPixelAnimation(anim pet.AnimationConfig) {
+// PlayPixelAnimation plays a pixel art animation
+func PlayPixelAnimation(anim pet.AnimationConfig) {
 	if len(anim.Frames) == 0 || len(anim.Frames) == 1 {
 		return
 	}
@@ -394,7 +444,7 @@ func playPixelAnimation(anim pet.AnimationConfig) {
 	frameHeights := make([]int, len(anim.Frames))
 	maxLines := 0
 	for i, frame := range anim.Frames {
-		rendered := renderPixelArt(frame)
+		rendered := RenderPixelArt(frame)
 		renderedFrames[i] = strings.TrimRight(rendered, "\n\r")
 		lines := strings.Count(renderedFrames[i], "\n") + 1
 		frameHeights[i] = lines
@@ -405,6 +455,17 @@ func playPixelAnimation(anim pet.AnimationConfig) {
 
 	// Hide cursor
 	fmt.Fprint(os.Stdout, "\033[?25l")
+
+	// Print buffer lines BELOW to ensure animation has room without scrolling
+	// This prevents the animation from overwriting status text when terminal is near bottom
+	bufferLines := maxLines + 10 // Extra buffer below animation
+	for j := 0; j < bufferLines; j++ {
+		fmt.Fprint(os.Stdout, "\n")
+	}
+	// Move back up to animation start position (we're now at the start of the buffer area)
+	if bufferLines > 0 {
+		fmt.Fprintf(os.Stdout, "\033[%dA", bufferLines)
+	}
 
 	for i := 0; i < totalFrames; i++ {
 		frameIdx := i % len(anim.Frames)
