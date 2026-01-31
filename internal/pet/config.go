@@ -21,6 +21,7 @@ const (
 type PetConfig struct {
 	Version               string                `toml:"version"`
 	Name                  string                `toml:"name"`
+	PetType               string                `toml:"petType,omitempty"` // Type of pet (cat, dancer, pixel, etc.)
 	EvolutionMode         EvolutionMode         `toml:"evolutionMode"`
 	Evolution             int                   `toml:"evolution"`
 	MaxEvolution          int                   `toml:"maxEvolution"`
@@ -46,15 +47,16 @@ type PetConfig struct {
 }
 
 type AnimationConfig struct {
-	Source string  `toml:"source"` // "inline" | "url" | "file"
+	Source string  `toml:"source"` // "inline" | "pixel" | "url" | "file"
 	URL    string  `toml:"url,omitempty"`
 	Path   string  `toml:"path,omitempty"`
 	FPS    int     `toml:"fps"`
 	Loops  int     `toml:"loops"`  // 0 or -1 = infinite
-	Frames []Frame `toml:"frames"` // for source == "inline"
+	Frames []Frame `toml:"frames"` // for source == "inline" or "pixel"
 }
 
 type Frame struct {
-	Art string `toml:"art"`
-	MS  int    `toml:"ms,omitempty"`
+	Art    string     `toml:"art,omitempty"`    // For inline ASCII art
+	Pixels [][]string `toml:"pixels,omitempty"` // For pixel art: 2D array of color hex codes
+	MS     int        `toml:"ms,omitempty"`
 }

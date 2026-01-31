@@ -263,7 +263,8 @@ var statusCmd = &cobra.Command{
 
 		if verbose {
 			// Verbose mode: stats card
-			fmt.Printf("%s\n\n", name)
+			primaryCondition := status.Primary
+			fmt.Printf("%s is %s\n\n", name, primaryCondition)
 			fmt.Printf("state: %s\n", conditions.FormatConditions(status.AllOrdered))
 			fmt.Printf("health: %d\n", status.Health)
 			fmt.Printf("hunger: %d\n", p.State.Hunger)
@@ -671,6 +672,11 @@ If pet-type is not specified, it will be auto-detected from your current pet.
 		// Merge: preserve user values, update from template
 		mergedConfig := mergeConfig(p.Config, templateConfig)
 
+		// Ensure petType is set (replace placeholder or use detected type)
+		if mergedConfig.PetType == "" || mergedConfig.PetType == "{{PET_TYPE}}" {
+			mergedConfig.PetType = petType
+		}
+
 		// Save merged config
 		configData, err := toml.Marshal(mergedConfig)
 		if err != nil {
@@ -951,13 +957,34 @@ func max(a, b int) int {
 
 // detectPetType tries to determine the pet type by comparing animations with known templates
 func detectPetType(p *pet.Pet) (string, error) {
+	// First, check if petType is explicitly set in config (ignore placeholder values)
+	if p.Config.PetType != "" && p.Config.PetType != "{{PET_TYPE}}" {
+		return p.Config.PetType, nil
+	}
+
+	// Quick heuristic: check animation source type
+	if p.Config.Animations != nil {
+		if defaultAnim, hasDefault := p.Config.Animations["default"]; hasDefault {
+			if defaultAnim.Source == "pixel" {
+				// Try pixel first if it's pixel art
+				libDir, err := storage.FindLibDir()
+				if err == nil {
+					templatePath := filepath.Join(libDir, "pixel.toml")
+					if _, err := os.Stat(templatePath); err == nil {
+						return "pixel", nil
+					}
+				}
+			}
+		}
+	}
+
 	libDir, err := storage.FindLibDir()
 	if err != nil {
 		return "", err
 	}
 
 	// Check known pet types
-	knownTypes := []string{"cat", "dancer"}
+	knownTypes := []string{"cat", "dancer", "pixel"}
 
 	for _, petType := range knownTypes {
 		templatePath := filepath.Join(libDir, petType+".toml")
@@ -998,20 +1025,45 @@ func matchesPetType(p *pet.Pet, template *pet.PetConfig) bool {
 		templateDefault, templateHasDefault := template.Animations["default"]
 
 		if petHasDefault && templateHasDefault {
-			// Compare first frame of default animation
-			if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
-				petArt := petDefault.Frames[0].Art
-				templateArt := templateDefault.Frames[0].Art
-				// Simple comparison - if art matches, likely same type
-				if petArt == templateArt {
-					return true
+			// Check animation source type first - this is a strong indicator
+			if petDefault.Source == "pixel" && templateDefault.Source == "pixel" {
+				// Both are pixel art - check if they have pixels
+				if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
+					petFrame := petDefault.Frames[0]
+					templateFrame := templateDefault.Frames[0]
+					if len(petFrame.Pixels) > 0 && len(templateFrame.Pixels) > 0 {
+						// Both have pixel art - likely same type
+						// Check dimensions are similar (within reasonable range)
+						petHeight := len(petFrame.Pixels)
+						templateHeight := len(templateFrame.Pixels)
+						if petHeight > 0 && templateHeight > 0 {
+							petWidth := len(petFrame.Pixels[0])
+							templateWidth := len(templateFrame.Pixels[0])
+							// Allow some variance in dimensions (within 2 pixels)
+							heightDiff := petHeight - templateHeight
+							widthDiff := petWidth - templateWidth
+							if heightDiff >= -2 && heightDiff <= 2 && widthDiff >= -2 && widthDiff <= 2 {
+								return true
+							}
+						}
+					}
+				}
+			} else if petDefault.Source == "inline" && templateDefault.Source == "inline" {
+				// For inline art, compare ASCII art
+				if len(petDefault.Frames) > 0 && len(templateDefault.Frames) > 0 {
+					petArt := petDefault.Frames[0].Art
+					templateArt := templateDefault.Frames[0].Art
+					// Simple comparison - if art matches, likely same type
+					if petArt == templateArt {
+						return true
+					}
 				}
 			}
 		}
 	}
 
 	// Fallback: check allowAnsiAnimations and other characteristics
-	// Cat typically has allowAnsiAnimations=false, dancer has true
+	// Cat typically has allowAnsiAnimations=false, dancer has true, pixel has true
 	if p.Config.AllowAnsiAnimations == template.AllowAnsiAnimations {
 		// Additional check: compare some other settings
 		if p.Config.StoneThreshold == template.StoneThreshold &&
@@ -1029,6 +1081,10 @@ func mergeConfig(existing, template pet.PetConfig) pet.PetConfig {
 
 	// Preserve user-specific values that should never change
 	merged.Name = existing.Name
+	merged.PetType = existing.PetType // Preserve existing petType, or use template's if not set
+	if merged.PetType == "" {
+		merged.PetType = template.PetType
+	}
 	merged.CreatedAt = existing.CreatedAt
 	merged.Evolution = existing.Evolution
 	merged.MaxEvolution = existing.MaxEvolution

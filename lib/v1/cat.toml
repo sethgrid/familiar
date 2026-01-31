@@ -1,5 +1,6 @@
 version = "1.0"
 name = "{{NAME}}"
+petType = "{{PET_TYPE}}"
 evolutionMode = "by-age"
 evolution = 0
 maxEvolution = 5

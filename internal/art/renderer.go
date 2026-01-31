@@ -3,6 +3,7 @@ package art
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,14 +112,29 @@ func GetStaticArt(p *pet.Pet, status conditions.DerivedStatus) string {
 
 	// Try to get animation from config
 	if anim, exists := p.Config.Animations[key]; exists && len(anim.Frames) > 0 {
-		// If animation has multiple frames and animations are enabled, play animation
-		if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
-			playAnimation(anim)
-			// Return empty string - animation already displayed the final frame
-			return ""
+		// Check if this is pixel art
+		if anim.Source == "pixel" {
+			// For pixel art, render the first frame
+			if len(anim.Frames) > 0 {
+				rendered := renderPixelArt(anim.Frames[0])
+				// If animation has multiple frames and animations are enabled, play animation
+				if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
+					playPixelAnimation(anim)
+					// Return empty string - animation already displayed the final frame
+					return ""
+				}
+				return rendered
+			}
+		} else {
+			// If animation has multiple frames and animations are enabled, play animation
+			if len(anim.Frames) > 1 && p.Config.AllowAnsiAnimations && isTerminal() {
+				playAnimation(anim)
+				// Return empty string - animation already displayed the final frame
+				return ""
+			}
+			// Otherwise return first frame
+			return anim.Frames[0].Art
 		}
-		// Otherwise return first frame
-		return anim.Frames[0].Art
 	}
 
 	// Fallback to hardcoded art based on state (check in priority order)
@@ -279,4 +295,202 @@ func getHasMessageCat() string {
 	return ` /\_/\ 
 ( o.o )
  > ^ <*`
+}
+
+// renderPixelArt renders a pixel art frame to a string using ANSI color codes
+// Uses half-block characters (▀ ▄) for 2 pixels per character cell
+func renderPixelArt(frame pet.Frame) string {
+	if len(frame.Pixels) == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+	height := len(frame.Pixels)
+
+	// Process pairs of rows to use half-block characters
+	for y := 0; y < height; y += 2 {
+		row1 := frame.Pixels[y]
+		var row2 []string
+		if y+1 < height {
+			row2 = frame.Pixels[y+1]
+		}
+
+		width := len(row1)
+		if row2 != nil && len(row2) > width {
+			width = len(row2)
+		}
+
+		for x := 0; x < width; x++ {
+			topColor := ""
+			if x < len(row1) {
+				topColor = row1[x]
+			}
+
+			bottomColor := ""
+			if row2 != nil && x < len(row2) {
+				bottomColor = row2[x]
+			}
+
+			// Render using half-block character
+			if topColor == "" && bottomColor == "" {
+				// Both transparent - use space
+				result.WriteString(" ")
+			} else if topColor == "" || topColor == "transparent" {
+				// Only bottom - use lower half block
+				r, g, b := hexToRGB(bottomColor)
+				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▄\033[0m", r, g, b))
+			} else if bottomColor == "" || bottomColor == "transparent" {
+				// Only top - use upper half block
+				r, g, b := hexToRGB(topColor)
+				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▀\033[0m", r, g, b))
+			} else if topColor == bottomColor {
+				// Same color - use full block
+				r, g, b := hexToRGB(topColor)
+				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm█\033[0m", r, g, b))
+			} else {
+				// Different colors - use upper half block with foreground and background
+				topR, topG, topB := hexToRGB(topColor)
+				bottomR, bottomG, bottomB := hexToRGB(bottomColor)
+				// Set both foreground (top) and background (bottom) colors
+				result.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm\033[48;2;%d;%d;%dm▀\033[0m",
+					topR, topG, topB, bottomR, bottomG, bottomB))
+			}
+		}
+
+		if y+2 < height {
+			result.WriteString("\n")
+		}
+	}
+
+	return result.String()
+}
+
+// playPixelAnimation plays a pixel art animation
+func playPixelAnimation(anim pet.AnimationConfig) {
+	if len(anim.Frames) == 0 || len(anim.Frames) == 1 {
+		return
+	}
+
+	// Calculate frame duration
+	fps := anim.FPS
+	if fps <= 0 {
+		fps = 1
+	}
+	frameDuration := time.Second / time.Duration(fps)
+
+	// Determine number of loops
+	loops := anim.Loops
+	if loops <= 0 {
+		loops = 3
+	}
+	if loops > 10 {
+		loops = 10
+	}
+
+	totalFrames := len(anim.Frames) * loops
+
+	// Render all frames to strings
+	renderedFrames := make([]string, len(anim.Frames))
+	frameHeights := make([]int, len(anim.Frames))
+	maxLines := 0
+	for i, frame := range anim.Frames {
+		rendered := renderPixelArt(frame)
+		renderedFrames[i] = strings.TrimRight(rendered, "\n\r")
+		lines := strings.Count(renderedFrames[i], "\n") + 1
+		frameHeights[i] = lines
+		if lines > maxLines {
+			maxLines = lines
+		}
+	}
+
+	// Hide cursor
+	fmt.Fprint(os.Stdout, "\033[?25l")
+
+	for i := 0; i < totalFrames; i++ {
+		frameIdx := i % len(anim.Frames)
+		renderedArt := renderedFrames[frameIdx]
+		frame := anim.Frames[frameIdx]
+
+		// Use frame-specific duration if available
+		duration := frameDuration
+		if frame.MS > 0 {
+			duration = time.Duration(frame.MS) * time.Millisecond
+		}
+
+		// Move back to start for frames after the first
+		if i > 0 {
+			prevFrameIdx := (i - 1) % len(anim.Frames)
+			prevFrameHeight := frameHeights[prevFrameIdx]
+			fmt.Fprint(os.Stdout, "\r")
+			if prevFrameHeight > 1 {
+				fmt.Fprintf(os.Stdout, "\033[%dA", prevFrameHeight-1)
+			}
+		}
+
+		// Clear space
+		for j := 0; j < maxLines; j++ {
+			fmt.Fprint(os.Stdout, "\033[2K")
+			if j < maxLines-1 {
+				fmt.Fprint(os.Stdout, "\033[1B")
+			}
+		}
+
+		if maxLines > 1 {
+			fmt.Fprintf(os.Stdout, "\033[%dA", maxLines-1)
+		}
+
+		// Print the frame
+		fmt.Fprint(os.Stdout, renderedArt)
+		os.Stdout.Sync()
+
+		// Add delay between frames
+		if i < totalFrames-1 {
+			time.Sleep(duration)
+		}
+	}
+
+	// Move cursor below and show it
+	fmt.Fprint(os.Stdout, "\n")
+	fmt.Fprint(os.Stdout, "\033[?25h")
+	os.Stdout.Sync()
+}
+
+// colorCode converts a hex color to ANSI 24-bit color code
+func colorCode(hex string) string {
+	if hex == "" || hex == "transparent" {
+		return ""
+	}
+
+	// Remove # if present
+	if strings.HasPrefix(hex, "#") {
+		hex = hex[1:]
+	}
+
+	// Parse hex
+	r, g, b := hexToRGB(hex)
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
+}
+
+// hexToRGB converts a hex color string to RGB values
+func hexToRGB(hex string) (int, int, int) {
+	// Remove # if present
+	if strings.HasPrefix(hex, "#") {
+		hex = hex[1:]
+	}
+
+	// Handle 3-digit hex
+	if len(hex) == 3 {
+		hex = string(hex[0]) + string(hex[0]) + string(hex[1]) + string(hex[1]) + string(hex[2]) + string(hex[2])
+	}
+
+	// Parse as 6-digit hex
+	if len(hex) == 6 {
+		r, _ := strconv.ParseInt(hex[0:2], 16, 64)
+		g, _ := strconv.ParseInt(hex[2:4], 16, 64)
+		b, _ := strconv.ParseInt(hex[4:6], 16, 64)
+		return int(r), int(g), int(b)
+	}
+
+	// Default to black if invalid
+	return 0, 0, 0
 }

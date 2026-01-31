@@ -200,6 +200,7 @@ func InitPet(global bool, petType string, name string, baseDir string) error {
 	configContent := string(configTemplate)
 	configContent = strings.ReplaceAll(configContent, "{{NAME}}", name)
 	configContent = strings.ReplaceAll(configContent, "{{CREATED_AT}}", createdAtStr)
+	configContent = strings.ReplaceAll(configContent, "{{PET_TYPE}}", petType)
 
 	// Replace placeholders in state template
 	stateContent := string(stateTemplate)
