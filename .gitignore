@@ -1,4 +1,6 @@
-familiar
+# Ignore the compiled binary (but not source files in cmd/familiar/)
+/familiar
 ./familiar
-./familiar/*
+familiar.exe
+# Ignore pet data directory
 .familiar/
