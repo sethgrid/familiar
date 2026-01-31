@@ -52,19 +52,19 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 		}
 	}
 
-	// Priority 4: lonely
+	// Priority 4: hungry (hunger is now inverted: higher = more hungry)
+	if p.State.Hunger > 50 {
+		conds[CondHungry] = true
+		if !contains(allOrdered, CondHungry) {
+			allOrdered = append(allOrdered, CondHungry)
+		}
+	}
+
+	// Priority 5: lonely
 	if isLonely(p, now) {
 		conds[CondLonely] = true
 		if !contains(allOrdered, CondLonely) {
 			allOrdered = append(allOrdered, CondLonely)
-		}
-	}
-
-	// Priority 5: hungry
-	if p.State.Hunger < 50 {
-		conds[CondHungry] = true
-		if !contains(allOrdered, CondHungry) {
-			allOrdered = append(allOrdered, CondHungry)
 		}
 	}
 
@@ -85,7 +85,8 @@ func DeriveStatus(p *pet.Pet, now time.Time, health int) DerivedStatus {
 	}
 
 	// Priority 8: happy (default if no other conditions and attributes high)
-	if len(allOrdered) == 0 || (p.State.Hunger > 70 && p.State.Happiness > 70 && p.State.Energy > 70) {
+	// Hunger is inverted: lower is better, so check Hunger < 30 (not hungry)
+	if len(allOrdered) == 0 || (p.State.Hunger < 30 && p.State.Happiness > 70 && p.State.Energy > 70) {
 		conds[CondHappy] = true
 		if !contains(allOrdered, CondHappy) {
 			allOrdered = append(allOrdered, CondHappy)
@@ -146,4 +147,60 @@ func contains(slice []Condition, item Condition) bool {
 		}
 	}
 	return false
+}
+
+// FormatConditions formats a slice of conditions into a comma-separated string.
+// Returns "happy" if the slice is empty.
+// Special handling: if "stone" is present, all other conditions are ignored
+// except "has-message", which is appended as "and has a message".
+func FormatConditions(conds []Condition) string {
+	if len(conds) == 0 {
+		return "happy"
+	}
+
+	// Check if stone is present
+	hasStone := false
+	hasMessage := false
+	for _, c := range conds {
+		if c == CondStone {
+			hasStone = true
+		}
+		if c == CondHasMessage {
+			hasMessage = true
+		}
+	}
+
+	// If stone is present, only show stone and optionally has-message
+	if hasStone {
+		if hasMessage {
+			return "stone and has a message"
+		}
+		return "stone"
+	}
+
+	// Normal formatting for non-stone conditions
+	var parts []string
+	for _, c := range conds {
+		if c == CondHasMessage {
+			continue
+		}
+		parts = append(parts, string(c))
+	}
+
+	// Handle case where only has-message was present and was filtered out of parts
+	if len(parts) == 0 {
+		if hasMessage {
+			return "has a message"
+		}
+		return "happy"
+	}
+
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		result += ", " + parts[i]
+	}
+	if hasMessage {
+		result += " and has a message"
+	}
+	return result
 }

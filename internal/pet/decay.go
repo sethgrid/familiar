@@ -28,7 +28,8 @@ func ApplyTimeStep(p *Pet, now time.Time) error {
 	}
 
 	// Apply decay
-	hunger := float64(p.State.Hunger) - elapsedHours*p.Config.HungerDecayPerHour*mult
+	// Hunger is inverted: decay increases hunger (higher = more hungry)
+	hunger := float64(p.State.Hunger) + elapsedHours*p.Config.HungerDecayPerHour*mult
 	happiness := float64(p.State.Happiness) - elapsedHours*p.Config.HappinessDecayPerHour*mult
 	energy := float64(p.State.Energy) - elapsedHours*p.Config.EnergyDecayPerHour*mult
 
@@ -38,12 +39,16 @@ func ApplyTimeStep(p *Pet, now time.Time) error {
 	p.State.Energy = clamp(int(energy), 0, 100)
 
 	// Compute health for stone check
+	// Hunger is inverted: lower hunger = better health
+	// Convert hunger to a "satisfaction" score: 100 - hunger
+	hungerScore := 100 - p.State.Hunger
+
 	var computedHealth int
 	switch p.Config.HealthComputation {
 	case HealthComputationWeighted:
-		computedHealth = int(float64(p.State.Hunger)*0.3 + float64(p.State.Happiness)*0.4 + float64(p.State.Energy)*0.3)
+		computedHealth = int(float64(hungerScore)*0.3 + float64(p.State.Happiness)*0.4 + float64(p.State.Energy)*0.3)
 	default: // average
-		computedHealth = (p.State.Hunger + p.State.Happiness + p.State.Energy) / 3
+		computedHealth = (hungerScore + p.State.Happiness + p.State.Energy) / 3
 	}
 	if computedHealth < 0 {
 		computedHealth = 0

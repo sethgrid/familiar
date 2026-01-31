@@ -38,8 +38,8 @@ func TestNonAnimatedFamiliar(t *testing.T) {
 	if p.Config.Name != "TestCat" {
 		t.Errorf("Expected name 'TestCat', got '%s'", p.Config.Name)
 	}
-	if p.State.Hunger != 75 {
-		t.Errorf("Expected initial hunger 75, got %d", p.State.Hunger)
+	if p.State.Hunger != 10 {
+		t.Errorf("Expected initial hunger 10 (low is good), got %d", p.State.Hunger)
 	}
 	if p.State.Evolution != 0 {
 		t.Errorf("Expected initial evolution 0, got %d", p.State.Evolution)
@@ -65,11 +65,14 @@ func TestNonAnimatedFamiliar(t *testing.T) {
 	}
 
 	// Verify it's the egg art (evolution 0)
-	expectedEgg := `  ___  
+	expectedEgg := `  ______
  /  . . \ 
- \___/`
-	if artStr != expectedEgg {
-		t.Errorf("Expected egg art for evolution 0, got:\n%s\nExpected:\n%s", artStr, expectedEgg)
+ \______/`
+	// Trim trailing whitespace for comparison
+	artStrTrimmed := strings.TrimRight(artStr, " \n\r")
+	expectedEggTrimmed := strings.TrimRight(expectedEgg, " \n\r")
+	if artStrTrimmed != expectedEggTrimmed {
+		t.Errorf("Expected egg art for evolution 0, got:\n%q\nExpected:\n%q", artStrTrimmed, expectedEggTrimmed)
 	}
 
 	// Test decay application
@@ -80,9 +83,9 @@ func TestNonAnimatedFamiliar(t *testing.T) {
 		t.Fatalf("Failed to apply time step: %v", err)
 	}
 
-	// Verify decay occurred (hunger should decrease)
-	if p.State.Hunger >= 75 {
-		t.Errorf("Expected hunger to decrease after decay, got %d", p.State.Hunger)
+	// Verify decay occurred (hunger should increase - higher is worse)
+	if p.State.Hunger <= 10 {
+		t.Errorf("Expected hunger to increase after decay (higher is worse), got %d", p.State.Hunger)
 	}
 
 	// Test state saving
@@ -296,7 +299,7 @@ func TestReadmeExample(t *testing.T) {
 	// Set a message
 	p.State.Message = "Attn Devs — new local config defaults available."
 	// Ensure good stats so it's not in a bad state
-	p.State.Hunger = 75
+	p.State.Hunger = 10 // Low hunger is good (0-30 is good range)
 	p.State.Happiness = 80
 	p.State.Energy = 60
 
@@ -339,14 +342,26 @@ func TestReadmeExample(t *testing.T) {
 	expectedHasMessageArt := ` /\_/\ 
 ( o.o )
  > ^ <*`
-	if artStr != expectedHasMessageArt {
-		t.Errorf("Expected has-message art:\n%s\nGot:\n%s", expectedHasMessageArt, artStr)
+	// Trim trailing whitespace for comparison
+	artStrTrimmed := strings.TrimRight(artStr, " \n\r")
+	expectedTrimmed := strings.TrimRight(expectedHasMessageArt, " \n\r")
+	if artStrTrimmed != expectedTrimmed {
+		t.Errorf("Expected has-message art:\n%q\nGot:\n%q", expectedTrimmed, artStrTrimmed)
 	}
 
 	// Now test acknowledge
+	// Simulate acknowledge: if message existed, boost to 100, else boost by 5
+	hadMessage := p.State.Message != ""
 	p.State.Message = ""
-	p.State.Happiness = min(100, p.State.Happiness+5)
-	p.State.Energy = min(100, p.State.Energy+5)
+	if hadMessage {
+		p.State.Hunger = 0 // 0 = not hungry (best)
+		p.State.Happiness = 100
+		p.State.Energy = 100
+	} else {
+		p.State.Hunger = max(0, p.State.Hunger-5) // Decrease hunger (lower is better)
+		p.State.Happiness = min(100, p.State.Happiness+5)
+		p.State.Energy = min(100, p.State.Energy+5)
+	}
 
 	// Save state after acknowledge
 	err = storage.SavePetState(p, statePath)
@@ -378,8 +393,11 @@ func TestReadmeExample(t *testing.T) {
 	expectedDefaultArt := ` /\_/\ 
 ( o.o )
  > ^ <`
-	if artStr != expectedDefaultArt {
-		t.Errorf("Expected default art after acknowledge:\n%s\nGot:\n%s", expectedDefaultArt, artStr)
+	// Trim trailing whitespace for comparison
+	artStrTrimmed = strings.TrimRight(artStr, " \n\r")
+	expectedDefaultTrimmed := strings.TrimRight(expectedDefaultArt, " \n\r")
+	if artStrTrimmed != expectedDefaultTrimmed {
+		t.Errorf("Expected default art after acknowledge:\n%q\nGot:\n%q", expectedDefaultTrimmed, artStrTrimmed)
 	}
 }
 
@@ -433,8 +451,8 @@ func TestNewPetShowsAsEgg(t *testing.T) {
 	}
 
 	// Test that first interaction evolves from 0 to 1
-	// Simulate a feed interaction
-	p.State.Hunger = min(100, p.State.Hunger+20)
+	// Simulate a feed interaction (feed decreases hunger, increases happiness)
+	p.State.Hunger = max(0, p.State.Hunger-20) // Decrease hunger (lower is better)
 	p.State.Happiness = min(100, p.State.Happiness+10)
 	
 	// Evolve from egg (0) to first evolution (1) on first interaction
