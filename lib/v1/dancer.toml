@@ -324,3 +324,22 @@ art = '''
    /|\
    / \
 '''
+
+[animations.asleep]
+source = "inline"
+fps = 2
+loops = -1
+
+[[animations.asleep.frames]]
+art = '''
+    o
+   /|\ zZz
+   / \
+'''
+
+[[animations.asleep.frames]]
+art = '''
+    o
+   /|\
+   / \
+'''

@@ -80,3 +80,22 @@ art = '''
 ( +.+ )
  > ^ <
 '''
+
+[animations.asleep]
+source = "inline"
+fps = 2
+loops = -1
+
+[[animations.asleep.frames]]
+art = '''
+ /\_/\ 
+( -.- )
+ > ^ <
+'''
+
+[[animations.asleep.frames]]
+art = '''
+ /\_/\ 
+( -.- ) zZz
+ > ^ <
+'''
